@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sqlite3
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -8,7 +9,8 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from hass_reader.cache import SEED_METRIC_SOURCES
+from hass_reader.battery_simulation import AlignedPowerRow, simulate_scenarios
+from hass_reader.cache import SEED_METRIC_SOURCES, resolve_cache_path
 from hass_reader.influx import (
     DEFAULT_INFLUX_DATABASE,
     DEFAULT_INFLUX_URL,
@@ -20,7 +22,12 @@ from hass_reader.influx import (
     format_influx_time,
 )
 from hass_reader.ingestion import align_primary_power, ingest_raw_metric, normalize_metric
-from hass_reader.simulation_db import DEFAULT_SIMULATION_DB_PATH
+from hass_reader.simulation_db import (
+    DEFAULT_SIMULATION_DB_PATH,
+    persist_failed_simulation_run,
+    persist_simulation_result,
+    resolve_simulation_db_path,
+)
 
 
 DEFAULT_MAX_GAP_SECONDS = 900
@@ -163,8 +170,99 @@ def _print_alignment_progress(window: str, done: int, total: int) -> None:
     print(f"phase=align window={window} progress={percent}% aligned={done}/{total}")
 
 
-def run_simulation(_args: argparse.Namespace) -> SimulationCommandResult:
-    raise NotImplementedError("simulation execution is not implemented yet")
+def run_simulation(args: argparse.Namespace) -> SimulationCommandResult:
+    start_utc = _parse_local_boundary(args.start, args.timezone)
+    end_utc = _parse_local_boundary(args.end, args.timezone)
+    ingestion_db_path = resolve_cache_path(args.ingestion_db)
+    simulation_db_path = resolve_simulation_db_path(args.simulation_db)
+
+    try:
+        row_count = _count_aligned_power_rows(ingestion_db_path, start_utc, end_utc)
+        if row_count < 2:
+            raise ValueError(
+                "not enough aligned power samples found for simulation window; "
+                "run `uv run hass-reader ingest` first"
+            )
+        result = simulate_scenarios(
+            _iter_aligned_power_rows(ingestion_db_path, start_utc, end_utc),
+            battery_capacities_kwh=args.battery_capacities_kwh,
+            efficiency=args.efficiency,
+        )
+        run_id = persist_simulation_result(
+            db_path=simulation_db_path,
+            ingestion_db_path=ingestion_db_path,
+            query_start_utc=start_utc,
+            query_end_utc=end_utc,
+            result=result,
+            persist_steps=args.store_steps,
+        )
+    except Exception as error:
+        try:
+            persist_failed_simulation_run(
+                db_path=simulation_db_path,
+                ingestion_db_path=ingestion_db_path,
+                query_start_utc=start_utc,
+                query_end_utc=end_utc,
+                error_message=str(error),
+            )
+        except Exception:
+            pass
+        raise
+
+    return SimulationCommandResult(run_id=run_id, scenario_count=len(result.scenarios))
+
+
+def _count_aligned_power_rows(
+    db_path: Path,
+    start_utc: datetime,
+    end_utc: datetime,
+) -> int:
+    if not db_path.exists():
+        raise FileNotFoundError(f"ingestion cache not found: {db_path}")
+    with sqlite3.connect(db_path) as connection:
+        row = connection.execute(
+            """
+            SELECT count(*)
+            FROM aligned_power_sample
+            WHERE timestamp_utc >= ? AND timestamp_utc < ?
+            """,
+            (_format_utc_timestamp(start_utc), _format_utc_timestamp(end_utc)),
+        ).fetchone()
+    if row is None:
+        return 0
+    return int(row[0])
+
+
+def _iter_aligned_power_rows(
+    db_path: Path,
+    start_utc: datetime,
+    end_utc: datetime,
+) -> Sequence[AlignedPowerRow]:
+    with sqlite3.connect(db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                timestamp_utc,
+                grid_import_kw,
+                grid_export_kw,
+                solar_production_kw,
+                gap_flags
+            FROM aligned_power_sample
+            WHERE timestamp_utc >= ? AND timestamp_utc < ?
+            ORDER BY timestamp_utc
+            """,
+            (_format_utc_timestamp(start_utc), _format_utc_timestamp(end_utc)),
+        ).fetchall()
+    return [
+        AlignedPowerRow(
+            timestamp_utc=_parse_utc_timestamp(str(row[0])),
+            grid_import_kw=float(row[1]),
+            grid_export_kw=float(row[2]),
+            solar_production_kw=None if row[3] is None else float(row[3]),
+            gap_flags=str(row[4]),
+        )
+        for row in rows
+    ]
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -210,6 +308,17 @@ def _parse_local_boundary(value: str, timezone_name: str) -> datetime:
         parsed_date.day,
         tzinfo=timezone,
     ).astimezone(UTC)
+
+
+def _parse_utc_timestamp(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _format_utc_timestamp(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _validate_simulation_args(args: argparse.Namespace) -> str | None:

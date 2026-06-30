@@ -1,7 +1,10 @@
+import sqlite3
 import tomllib
+from datetime import UTC, datetime
 from pathlib import Path
 
 from hass_reader.cli import IngestCommandResult, SimulationCommandResult, main
+from hass_reader.cache import initialize_cache
 
 
 def test_ingest_command_uses_documented_defaults(tmp_path, capsys) -> None:
@@ -111,3 +114,139 @@ def test_simulate_command_parses_store_steps(tmp_path) -> None:
 
     assert exit_code == 0
     assert calls[0].store_steps is True
+
+
+def test_simulate_command_reads_ingestion_cache_and_writes_simulation_db(tmp_path, capsys) -> None:
+    ingestion_db = tmp_path / "ingestion.sqlite3"
+    simulation_db = tmp_path / "simulation.sqlite3"
+    _write_aligned_power_samples(ingestion_db)
+
+    exit_code = main(
+        [
+            "simulate",
+            "--batteries",
+            "1",
+            "--efficiency",
+            "0.8",
+            "--ingestion-db",
+            str(ingestion_db),
+            "--simulation-db",
+            str(simulation_db),
+            "--timezone",
+            "UTC",
+            "--start",
+            "2025-07-01",
+            "--end",
+            "2025-07-02",
+        ]
+    )
+
+    assert exit_code == 0
+    assert "simulation complete: run_id=1 scenarios=2" in capsys.readouterr().out
+    with sqlite3.connect(simulation_db) as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                simulation_scenario.name,
+                simulation_summary.imported_kwh,
+                simulation_summary.exported_kwh,
+                simulation_summary.charged_kwh,
+                simulation_summary.discharged_kwh,
+                simulation_summary.losses_kwh
+            FROM simulation_summary
+            JOIN simulation_scenario ON simulation_scenario.id = simulation_summary.scenario_id
+            ORDER BY simulation_scenario.id
+            """
+        ).fetchall()
+
+    assert [
+        (name, round(imported, 6), round(exported, 6), charged, discharged, round(losses, 6))
+        for name, imported, exported, charged, discharged, losses in rows
+    ] == [
+        ("baseline", 1.0, 1.0, 0.0, 0.0, 0.0),
+        ("1kWh", 0.2, 0.0, 1.0, 1.0, 0.2),
+    ]
+
+
+def _write_aligned_power_samples(db_path: Path) -> None:
+    initialize_cache(db_path)
+    with sqlite3.connect(db_path) as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO ingestion_run (
+                started_at_utc,
+                influx_url,
+                influx_database,
+                local_timezone,
+                query_start_utc,
+                query_end_utc,
+                status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                datetime.now(UTC).isoformat(),
+                "http://192.168.1.10:8086",
+                "hass",
+                "UTC",
+                "2025-07-01T00:00:00Z",
+                "2025-07-02T00:00:00Z",
+                "completed",
+            ),
+        )
+        run_id = cursor.lastrowid
+        connection.executemany(
+            """
+            INSERT INTO aligned_power_sample (
+                timestamp_utc,
+                grid_import_kw,
+                grid_export_kw,
+                solar_production_kw,
+                import_source_sample_utc,
+                export_source_sample_utc,
+                solar_source_sample_utc,
+                max_source_age_seconds,
+                gap_flags,
+                ingestion_run_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "2025-07-01T00:00:00Z",
+                    0.0,
+                    1.0,
+                    1.0,
+                    "2025-07-01T00:00:00Z",
+                    "2025-07-01T00:00:00Z",
+                    "2025-07-01T00:00:00Z",
+                    0,
+                    "",
+                    run_id,
+                ),
+                (
+                    "2025-07-01T01:00:00Z",
+                    1.0,
+                    0.0,
+                    0.0,
+                    "2025-07-01T01:00:00Z",
+                    "2025-07-01T01:00:00Z",
+                    "2025-07-01T01:00:00Z",
+                    0,
+                    "",
+                    run_id,
+                ),
+                (
+                    "2025-07-01T02:00:00Z",
+                    0.0,
+                    0.0,
+                    0.0,
+                    "2025-07-01T02:00:00Z",
+                    "2025-07-01T02:00:00Z",
+                    "2025-07-01T02:00:00Z",
+                    0,
+                    "",
+                    run_id,
+                ),
+            ],
+        )
