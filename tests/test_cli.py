@@ -263,6 +263,39 @@ def test_report_command_writes_csv_output(tmp_path) -> None:
     assert rows[0]["avoided_import_kwh"] == "0.8"
 
 
+def test_report_command_writes_numbersapp_timestamp_csv_output(tmp_path) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    ingestion_db = tmp_path / "ingestion.sqlite3"
+    output_path = tmp_path / "results.csv"
+    _write_ingestion_metadata(ingestion_db)
+    _persist_reportable_run(
+        simulation_db,
+        battery_capacities_kwh=[1.0],
+        ingestion_db=ingestion_db,
+    )
+
+    exit_code = main(
+        [
+            "report",
+            "--simulation-db",
+            str(simulation_db),
+            "--output",
+            str(output_path),
+            "--overwrite",
+            "--numbersapp",
+        ]
+    )
+
+    assert exit_code == 0
+    with output_path.open(newline="") as csv_file:
+        rows = list(csv.DictReader(csv_file))
+
+    assert rows[0]["query_start_utc"] == "2025-06-30 22:00:00"
+    assert rows[0]["query_end_utc"] == "2026-06-30 22:00:00"
+    assert rows[0]["ingestion_query_start_utc"] == "2025-06-30 22:00:00"
+    assert rows[0]["ingestion_query_end_utc"] == "2026-06-30 22:00:00"
+
+
 def test_report_command_refuses_to_overwrite_csv_without_option(tmp_path, capsys) -> None:
     simulation_db = tmp_path / "simulation.sqlite3"
     output_path = tmp_path / "results.csv"
@@ -508,6 +541,43 @@ def test_soc_command_writes_csv_output(tmp_path) -> None:
     assert rows[0]["min_soc_kwh"] == "0"
     assert rows[0]["avg_soc_kwh"] == "0.5"
     assert rows[0]["max_soc_kwh"] == "1"
+
+
+def test_soc_command_writes_numbersapp_timestamp_csv_output(tmp_path) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    output_path = tmp_path / "soc.csv"
+    _persist_reportable_run(simulation_db, battery_capacities_kwh=[1.0], persist_steps=True)
+
+    exit_code = main(
+        [
+            "soc",
+            "--simulation-db",
+            str(simulation_db),
+            "--run-id",
+            "1",
+            "--batteries",
+            "1",
+            "--bucket",
+            "day",
+            "--timezone",
+            "UTC",
+            "--start",
+            "2025-07-01",
+            "--end",
+            "2025-07-02",
+            "--output",
+            str(output_path),
+            "--overwrite",
+            "--numbersapp",
+        ]
+    )
+
+    assert exit_code == 0
+    with output_path.open(newline="") as csv_file:
+        rows = list(csv.DictReader(csv_file))
+
+    assert rows[0]["bucket_start_utc"] == "2025-07-01 00:00:00"
+    assert rows[0]["bucket_end_utc"] == "2025-07-02 00:00:00"
 
 
 def test_soc_command_refuses_to_overwrite_csv_without_option(tmp_path, capsys) -> None:

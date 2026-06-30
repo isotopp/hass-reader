@@ -87,6 +87,7 @@ def write_soc_rollup_csv(
     output_path: str | Path,
     *,
     overwrite: bool,
+    numbersapp: bool = False,
 ) -> None:
     resolved_path = Path(output_path)
     if resolved_path.exists() and not overwrite:
@@ -96,7 +97,7 @@ def write_soc_rollup_csv(
         writer = csv.DictWriter(csv_file, fieldnames=SOC_ROLLUP_CSV_FIELDNAMES)
         writer.writeheader()
         for row in report.rows:
-            writer.writerow(_soc_rollup_csv_row(report, row))
+            writer.writerow(_soc_rollup_csv_row(report, row, numbersapp=numbersapp))
 
 
 def check_soc_step_availability(
@@ -514,15 +515,26 @@ def _soc_bar(value: float, capacity: float) -> str:
     return "#" * filled + "." * (10 - filled)
 
 
-def _soc_rollup_csv_row(report: SocRollupReport, row: SocRollupRow) -> dict[str, str]:
+def _soc_rollup_csv_row(
+    report: SocRollupReport,
+    row: SocRollupRow,
+    *,
+    numbersapp: bool,
+) -> dict[str, str]:
     return {
         "run_id": str(report.run_id),
         "scenario_name": row.scenario_name,
         "capacity_kwh": _format_decimal(row.capacity_kwh),
         "efficiency": _format_decimal(row.efficiency),
         "bucket_kind": row.bucket_kind,
-        "bucket_start_utc": row.bucket_start_utc,
-        "bucket_end_utc": row.bucket_end_utc,
+        "bucket_start_utc": _format_csv_timestamp(
+            row.bucket_start_utc,
+            numbersapp=numbersapp,
+        ),
+        "bucket_end_utc": _format_csv_timestamp(
+            row.bucket_end_utc,
+            numbersapp=numbersapp,
+        ),
         "min_soc_kwh": _format_decimal(row.min_soc_kwh),
         "avg_soc_kwh": _format_decimal(row.avg_soc_kwh),
         "max_soc_kwh": _format_decimal(row.max_soc_kwh),
@@ -532,3 +544,9 @@ def _soc_rollup_csv_row(report: SocRollupReport, row: SocRollupRow) -> dict[str,
 
 def _format_decimal(value: float) -> str:
     return f"{value:.12g}"
+
+
+def _format_csv_timestamp(value: str, *, numbersapp: bool) -> str:
+    if not numbersapp:
+        return value
+    return _parse_utc_timestamp(value).strftime("%Y-%m-%d %H:%M:%S")

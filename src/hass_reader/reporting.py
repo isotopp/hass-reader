@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import sqlite3
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from hass_reader.cache import SEED_METRIC_SOURCES
@@ -111,7 +112,13 @@ def format_human_summary(report: SimulationReport) -> str:
     return "\n".join(lines)
 
 
-def write_csv_report(report: SimulationReport, output_path: str | Path, *, overwrite: bool) -> None:
+def write_csv_report(
+    report: SimulationReport,
+    output_path: str | Path,
+    *,
+    overwrite: bool,
+    numbersapp: bool = False,
+) -> None:
     resolved_path = Path(output_path)
     if resolved_path.exists() and not overwrite:
         raise ReportingError(f"output file already exists: {resolved_path}")
@@ -120,7 +127,7 @@ def write_csv_report(report: SimulationReport, output_path: str | Path, *, overw
         writer = csv.DictWriter(csv_file, fieldnames=CSV_FIELDNAMES)
         writer.writeheader()
         for scenario in report.battery_scenarios:
-            writer.writerow(_csv_row(report, scenario))
+            writer.writerow(_csv_row(report, scenario, numbersapp=numbersapp))
 
 
 def load_simulation_report(db_path: str | Path, *, run_id: int | None = None) -> SimulationReport:
@@ -271,12 +278,23 @@ def _format_scenario_row(scenario: ReportScenario) -> str:
     )
 
 
-def _csv_row(report: SimulationReport, scenario: ReportScenario) -> dict[str, str]:
+def _csv_row(
+    report: SimulationReport,
+    scenario: ReportScenario,
+    *,
+    numbersapp: bool,
+) -> dict[str, str]:
     source_metadata = report.source_metadata
     return {
         "run_id": str(report.run_id),
-        "query_start_utc": report.query_start_utc,
-        "query_end_utc": report.query_end_utc,
+        "query_start_utc": _format_csv_timestamp(
+            report.query_start_utc,
+            numbersapp=numbersapp,
+        ),
+        "query_end_utc": _format_csv_timestamp(
+            report.query_end_utc,
+            numbersapp=numbersapp,
+        ),
         "scenario_name": scenario.name,
         "capacity_kwh": _format_decimal(scenario.capacity_kwh),
         "efficiency": _format_decimal(scenario.efficiency),
@@ -290,8 +308,14 @@ def _csv_row(report: SimulationReport, scenario: ReportScenario) -> dict[str, st
         "avoided_export_kwh": _format_decimal(scenario.avoided_export_kwh),
         "influx_url": source_metadata.influx_url or "",
         "influx_database": source_metadata.influx_database or "",
-        "ingestion_query_start_utc": source_metadata.ingestion_query_start_utc or "",
-        "ingestion_query_end_utc": source_metadata.ingestion_query_end_utc or "",
+        "ingestion_query_start_utc": _format_optional_csv_timestamp(
+            source_metadata.ingestion_query_start_utc,
+            numbersapp=numbersapp,
+        ),
+        "ingestion_query_end_utc": _format_optional_csv_timestamp(
+            source_metadata.ingestion_query_end_utc,
+            numbersapp=numbersapp,
+        ),
         "grid_import_entity_id": _mapping_entity_id(source_metadata, "grid_import_power"),
         "grid_export_entity_id": _mapping_entity_id(source_metadata, "grid_export_power"),
         "solar_production_entity_id": _mapping_entity_id(
@@ -304,6 +328,25 @@ def _csv_row(report: SimulationReport, scenario: ReportScenario) -> dict[str, st
 
 def _format_decimal(value: float) -> str:
     return f"{value:.12g}"
+
+
+def _format_optional_csv_timestamp(value: str | None, *, numbersapp: bool) -> str:
+    if value is None:
+        return ""
+    return _format_csv_timestamp(value, numbersapp=numbersapp)
+
+
+def _format_csv_timestamp(value: str, *, numbersapp: bool) -> str:
+    if not numbersapp:
+        return value
+    return _parse_utc_timestamp(value).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _parse_utc_timestamp(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _load_source_metadata(ingestion_db_path: Path) -> SourceMetadata:

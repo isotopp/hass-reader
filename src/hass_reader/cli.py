@@ -124,7 +124,12 @@ def main(
         try:
             report = load_simulation_report(args.simulation_db, run_id=args.run_id)
             if args.output is not None:
-                write_csv_report(report, args.output, overwrite=args.overwrite)
+                write_csv_report(
+                    report,
+                    args.output,
+                    overwrite=args.overwrite,
+                    numbersapp=args.numbersapp,
+                )
         except Exception as error:
             print(f"error: {error}", file=sys.stderr)
             return 1
@@ -152,7 +157,12 @@ def main(
                 end_utc=args.end_utc,
             )
             if args.output is not None:
-                write_soc_rollup_csv(report, args.output, overwrite=args.overwrite)
+                write_soc_rollup_csv(
+                    report,
+                    args.output,
+                    overwrite=args.overwrite,
+                    numbersapp=args.numbersapp,
+                )
         except Exception as error:
             print(f"error: {error}", file=sys.stderr)
             return 1
@@ -364,6 +374,7 @@ def _build_parser() -> argparse.ArgumentParser:
     report.add_argument("--run-id", type=int, default=None)
     report.add_argument("--output", type=Path, default=None)
     report.add_argument("--overwrite", action="store_true")
+    report.add_argument("--numbersapp", action="store_true")
     soc = subparsers.add_parser("soc")
     soc.add_argument("--simulation-db", type=Path, default=DEFAULT_SIMULATION_DB_PATH)
     soc.add_argument("--run-id", type=int, default=None)
@@ -374,6 +385,7 @@ def _build_parser() -> argparse.ArgumentParser:
     soc.add_argument("--bucket", default="day")
     soc.add_argument("--output", type=Path, default=None)
     soc.add_argument("--overwrite", action="store_true")
+    soc.add_argument("--numbersapp", action="store_true")
     return parser
 
 
