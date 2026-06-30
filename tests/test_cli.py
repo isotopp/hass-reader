@@ -1,3 +1,4 @@
+import csv
 import sqlite3
 import tomllib
 from datetime import UTC, datetime
@@ -207,6 +208,65 @@ def test_report_command_can_select_run_id(tmp_path, capsys) -> None:
     assert f"Simulation run {first_run_id}" in output
     assert "1kWh:" in output
     assert "2kWh:" not in output
+
+
+def test_report_command_writes_csv_output(tmp_path) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    output_path = tmp_path / "results.csv"
+    _persist_reportable_run(simulation_db, battery_capacities_kwh=[1.0, 2.0])
+
+    exit_code = main(
+        [
+            "report",
+            "--simulation-db",
+            str(simulation_db),
+            "--output",
+            str(output_path),
+            "--overwrite",
+        ]
+    )
+
+    assert exit_code == 0
+    with output_path.open(newline="") as csv_file:
+        rows = list(csv.DictReader(csv_file))
+
+    assert list(rows[0]) == [
+        "run_id",
+        "query_start_utc",
+        "query_end_utc",
+        "scenario_name",
+        "capacity_kwh",
+        "efficiency",
+        "imported_kwh",
+        "exported_kwh",
+        "charged_kwh",
+        "discharged_kwh",
+        "losses_kwh",
+        "ending_soc_kwh",
+        "avoided_import_kwh",
+        "avoided_export_kwh",
+    ]
+    assert [row["scenario_name"] for row in rows] == ["1kWh", "2kWh"]
+    assert rows[0]["capacity_kwh"] == "1"
+    assert rows[0]["imported_kwh"] == "1.2"
+    assert rows[0]["avoided_import_kwh"] == "0.8"
+
+
+def test_report_command_refuses_to_overwrite_csv_without_option(tmp_path, capsys) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    output_path = tmp_path / "results.csv"
+    output_path.write_text("keep me\n")
+    _persist_reportable_run(simulation_db, battery_capacities_kwh=[1.0])
+
+    exit_code = main(
+        ["report", "--simulation-db", str(simulation_db), "--output", str(output_path)]
+    )
+
+    assert exit_code == 1
+    assert output_path.read_text() == "keep me\n"
+    captured = capsys.readouterr()
+    assert "already exists" in captured.err
+    assert "Traceback" not in captured.err
 
 
 def _write_aligned_power_samples(db_path: Path) -> None:

@@ -1,8 +1,27 @@
 from __future__ import annotations
 
+import csv
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+
+
+CSV_FIELDNAMES = [
+    "run_id",
+    "query_start_utc",
+    "query_end_utc",
+    "scenario_name",
+    "capacity_kwh",
+    "efficiency",
+    "imported_kwh",
+    "exported_kwh",
+    "charged_kwh",
+    "discharged_kwh",
+    "losses_kwh",
+    "ending_soc_kwh",
+    "avoided_import_kwh",
+    "avoided_export_kwh",
+]
 
 
 class ReportingError(ValueError):
@@ -47,6 +66,18 @@ def format_human_summary(report: SimulationReport) -> str:
     ]
     lines.extend(_format_battery_summary(scenario) for scenario in report.battery_scenarios)
     return "\n".join(lines)
+
+
+def write_csv_report(report: SimulationReport, output_path: str | Path, *, overwrite: bool) -> None:
+    resolved_path = Path(output_path)
+    if resolved_path.exists() and not overwrite:
+        raise ReportingError(f"output file already exists: {resolved_path}")
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    with resolved_path.open("w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=CSV_FIELDNAMES)
+        writer.writeheader()
+        for scenario in report.battery_scenarios:
+            writer.writerow(_csv_row(report, scenario))
 
 
 def load_simulation_report(db_path: str | Path, *, run_id: int | None = None) -> SimulationReport:
@@ -195,3 +226,26 @@ def _format_battery_summary(scenario: ReportScenario) -> str:
 
 def _format_kwh(value: float) -> str:
     return f"{value:.2f} kWh"
+
+
+def _csv_row(report: SimulationReport, scenario: ReportScenario) -> dict[str, str]:
+    return {
+        "run_id": str(report.run_id),
+        "query_start_utc": report.query_start_utc,
+        "query_end_utc": report.query_end_utc,
+        "scenario_name": scenario.name,
+        "capacity_kwh": _format_decimal(scenario.capacity_kwh),
+        "efficiency": _format_decimal(scenario.efficiency),
+        "imported_kwh": _format_decimal(scenario.imported_kwh),
+        "exported_kwh": _format_decimal(scenario.exported_kwh),
+        "charged_kwh": _format_decimal(scenario.charged_kwh),
+        "discharged_kwh": _format_decimal(scenario.discharged_kwh),
+        "losses_kwh": _format_decimal(scenario.losses_kwh),
+        "ending_soc_kwh": _format_decimal(scenario.ending_soc_kwh),
+        "avoided_import_kwh": _format_decimal(scenario.avoided_import_kwh),
+        "avoided_export_kwh": _format_decimal(scenario.avoided_export_kwh),
+    }
+
+
+def _format_decimal(value: float) -> str:
+    return f"{value:.12g}"

@@ -22,7 +22,7 @@ from hass_reader.influx import (
     format_influx_time,
 )
 from hass_reader.ingestion import align_primary_power, ingest_raw_metric, normalize_metric
-from hass_reader.reporting import format_human_summary, load_simulation_report
+from hass_reader.reporting import format_human_summary, load_simulation_report, write_csv_report
 from hass_reader.simulation_db import (
     DEFAULT_SIMULATION_DB_PATH,
     persist_failed_simulation_run,
@@ -113,6 +113,8 @@ def main(
     if args.command == "report":
         try:
             report = load_simulation_report(args.simulation_db, run_id=args.run_id)
+            if args.output is not None:
+                write_csv_report(report, args.output, overwrite=args.overwrite)
         except Exception as error:
             print(f"error: {error}", file=sys.stderr)
             return 1
@@ -322,6 +324,8 @@ def _build_parser() -> argparse.ArgumentParser:
     report = subparsers.add_parser("report")
     report.add_argument("--simulation-db", type=Path, default=DEFAULT_SIMULATION_DB_PATH)
     report.add_argument("--run-id", type=int, default=None)
+    report.add_argument("--output", type=Path, default=None)
+    report.add_argument("--overwrite", action="store_true")
     return parser
 
 

@@ -123,7 +123,7 @@ Execution result:
 
 ## REP-003: Export Simulation Summary as CSV
 
-Status: Not Started
+Status: Done
 
 Source story: Story 2, CSV Output
 
@@ -153,6 +153,14 @@ Acceptance criteria:
 - CSV headers are stable snake_case names.
 - CSV contains one row per configured battery capacity.
 - File-write failures exit non-zero and print errors to stderr.
+
+Execution result:
+
+- Added `--output` and `--overwrite` to `hass-reader report`.
+- Implemented CSV export in `src/hass_reader/reporting.py`.
+- Existing files are protected unless `--overwrite` is provided.
+- Covered by `tests/test_cli.py`.
+- Committed with the `REP-003` implementation.
 
 ## REP-004: Include Metric Mapping and Source Metadata
 
