@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,6 +14,7 @@ from hass_reader.influx import InfluxSample, format_influx_time
 DEFAULT_TIMEZONE = "Europe/Amsterdam"
 DEFAULT_INFLUX_URL = "http://192.168.1.10:8086"
 DEFAULT_INFLUX_DATABASE = "hass"
+AlignmentProgress = Callable[[int, int], None]
 
 
 class RawMetricIngestor(Protocol):
@@ -455,6 +457,8 @@ def align_primary_power(
     *,
     db_path: str | Path | None = None,
     max_gap_seconds: int,
+    include_rows: bool = True,
+    progress: AlignmentProgress | None = None,
 ) -> AlignmentResult:
     resolved_path = initialize_cache(resolve_cache_path(db_path))
     with sqlite3.connect(resolved_path) as connection:
@@ -474,6 +478,8 @@ def align_primary_power(
             }
         )
         if not timeline:
+            if progress is not None:
+                progress(0, 0)
             return AlignmentResult(aligned_count=0, rows=[])
 
         ingestion_run_id = max(
@@ -481,18 +487,7 @@ def align_primary_power(
             for samples in (import_samples, export_samples, solar_samples)
             for sample in samples
         )
-        aligned_rows = [
-            _align_timestamp(
-                timestamp,
-                import_samples=import_samples,
-                export_samples=export_samples,
-                solar_samples=solar_samples,
-                max_gap_seconds=max_gap_seconds,
-            )
-            for timestamp in timeline
-        ]
-        connection.executemany(
-            """
+        sql = """
             INSERT INTO aligned_power_sample (
                 timestamp_utc,
                 grid_import_kw,
@@ -516,8 +511,30 @@ def align_primary_power(
                 max_source_age_seconds = excluded.max_source_age_seconds,
                 gap_flags = excluded.gap_flags,
                 ingestion_run_id = excluded.ingestion_run_id
-            """,
-            [
+            """
+        import_index = export_index = solar_index = -1
+        aligned_count = 0
+        public_rows: list[dict[str, Any]] = []
+        batch: list[tuple[Any, ...]] = []
+        last_progress_percent = 0
+        total_count = len(timeline)
+
+        for timestamp in timeline:
+            import_index, import_value = _latest_value_at_index(
+                import_samples, timestamp, import_index
+            )
+            export_index, export_value = _latest_value_at_index(
+                export_samples, timestamp, export_index
+            )
+            solar_index, solar_value = _latest_value_at_index(solar_samples, timestamp, solar_index)
+            row = _align_timestamp(
+                timestamp,
+                import_value=import_value,
+                export_value=export_value,
+                solar_value=solar_value,
+                max_gap_seconds=max_gap_seconds,
+            )
+            batch.append(
                 (
                     row["timestamp_utc"],
                     row["grid_import_kw"],
@@ -530,21 +547,30 @@ def align_primary_power(
                     row["gap_flags"],
                     ingestion_run_id,
                 )
-                for row in aligned_rows
-            ],
-        )
-        public_rows = [
-            {
-                "timestamp_utc": row["timestamp_utc"],
-                "grid_import_kw": row["grid_import_kw"],
-                "grid_export_kw": row["grid_export_kw"],
-                "solar_production_kw": row["solar_production_kw"],
-                "max_source_age_seconds": row["max_source_age_seconds"],
-                "gap_flags": row["gap_flags"],
-            }
-            for row in aligned_rows
-        ]
-        return AlignmentResult(aligned_count=len(public_rows), rows=public_rows)
+            )
+            if include_rows:
+                public_rows.append(
+                    {
+                        "timestamp_utc": row["timestamp_utc"],
+                        "grid_import_kw": row["grid_import_kw"],
+                        "grid_export_kw": row["grid_export_kw"],
+                        "solar_production_kw": row["solar_production_kw"],
+                        "max_source_age_seconds": row["max_source_age_seconds"],
+                        "gap_flags": row["gap_flags"],
+                    }
+                )
+            aligned_count += 1
+            if len(batch) >= 10_000:
+                connection.executemany(sql, batch)
+                batch.clear()
+            progress_percent = aligned_count * 100 // total_count
+            if progress is not None and progress_percent > last_progress_percent:
+                progress(aligned_count, total_count)
+                last_progress_percent = progress_percent
+
+        if batch:
+            connection.executemany(sql, batch)
+        return AlignmentResult(aligned_count=aligned_count, rows=public_rows)
 
 
 def read_ingestion_summary(*, db_path: str | Path | None = None) -> IngestionSummary:
@@ -661,14 +687,11 @@ def _load_normalized_samples(
 def _align_timestamp(
     timestamp: datetime,
     *,
-    import_samples: list[NormalizedSampleRow],
-    export_samples: list[NormalizedSampleRow],
-    solar_samples: list[NormalizedSampleRow],
+    import_value: NormalizedSampleRow | None,
+    export_value: NormalizedSampleRow | None,
+    solar_value: NormalizedSampleRow | None,
     max_gap_seconds: int,
 ) -> dict[str, Any]:
-    import_value = _latest_value_at(import_samples, timestamp)
-    export_value = _latest_value_at(export_samples, timestamp)
-    solar_value = _latest_value_at(solar_samples, timestamp)
     flags: list[str] = []
 
     grid_import_kw, import_age, import_timestamp = _required_power_value(
@@ -708,16 +731,18 @@ def _align_timestamp(
     }
 
 
-def _latest_value_at(
+def _latest_value_at_index(
     samples: list[NormalizedSampleRow],
     timestamp: datetime,
-) -> NormalizedSampleRow | None:
-    latest: NormalizedSampleRow | None = None
-    for sample in samples:
-        if sample.timestamp_utc > timestamp:
-            break
-        latest = sample
-    return latest
+    current_index: int,
+) -> tuple[int, NormalizedSampleRow | None]:
+    while (
+        current_index + 1 < len(samples) and samples[current_index + 1].timestamp_utc <= timestamp
+    ):
+        current_index += 1
+    if current_index < 0:
+        return current_index, None
+    return current_index, samples[current_index]
 
 
 def _required_power_value(

@@ -17,6 +17,7 @@ from hass_reader.influx import (
     InfluxMetric,
     InfluxSample,
     default_query_range,
+    format_influx_time,
 )
 from hass_reader.ingestion import align_primary_power, ingest_raw_metric, normalize_metric
 from hass_reader.simulation_db import DEFAULT_SIMULATION_DB_PATH
@@ -110,6 +111,7 @@ def run_ingest(args: argparse.Namespace) -> IngestCommandResult:
     fetched = 0
     cached = 0
     normalized = 0
+    window = f"{format_influx_time(start_utc)}..{format_influx_time(end_utc)}"
 
     for source in SEED_METRIC_SOURCES:
         raw_result = ingest_raw_metric(
@@ -127,11 +129,26 @@ def run_ingest(args: argparse.Namespace) -> IngestCommandResult:
             fetched += 1
         else:
             cached += 1
-        normalized += normalize_metric(db_path=args.db, role=source.role).normalized_count
+        fetch_result = "fetched" if raw_result.fetched else "cached"
+        print(
+            "phase=fetch "
+            f"window={window} source={source.role} result={fetch_result} "
+            f"samples={raw_result.sample_count}"
+        )
+        normalization_result = normalize_metric(db_path=args.db, role=source.role)
+        normalized += normalization_result.normalized_count
+        print(
+            "phase=normalize "
+            f"window={window} source={source.role} "
+            f"samples={normalization_result.normalized_count}"
+        )
 
+    print(f"phase=align window={window} progress=0% aligned=0")
     aligned = align_primary_power(
         db_path=args.db,
         max_gap_seconds=args.max_gap_seconds,
+        include_rows=False,
+        progress=lambda done, total: _print_alignment_progress(window, done, total),
     ).aligned_count
     return IngestCommandResult(
         fetched=fetched,
@@ -139,6 +156,11 @@ def run_ingest(args: argparse.Namespace) -> IngestCommandResult:
         normalized=normalized,
         aligned=aligned,
     )
+
+
+def _print_alignment_progress(window: str, done: int, total: int) -> None:
+    percent = 100 if total == 0 else min(100, done * 100 // total)
+    print(f"phase=align window={window} progress={percent}% aligned={done}/{total}")
 
 
 def run_simulation(_args: argparse.Namespace) -> SimulationCommandResult:

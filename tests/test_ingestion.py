@@ -291,6 +291,41 @@ def test_align_primary_power_flags_values_beyond_gap(tmp_path) -> None:
     assert result.rows[1]["gap_flags"] == "import_gap,solar_gap"
 
 
+def test_align_primary_power_reports_bounded_progress_checkpoints(tmp_path) -> None:
+    db_path = tmp_path / "cache.sqlite3"
+    timestamps = [
+        datetime(2025, 7, 1, 0, index, tzinfo=UTC)
+        for index in range(3)
+    ]
+    _ingest_and_normalize(
+        db_path,
+        "grid_import_power",
+        [(timestamp, 1.0, "kW") for timestamp in timestamps],
+    )
+    _ingest_and_normalize(
+        db_path,
+        "grid_export_power",
+        [(timestamp, 0.25, "kW") for timestamp in timestamps],
+    )
+    _ingest_and_normalize(
+        db_path,
+        "solar_production_power",
+        [(timestamp, 1000.0, "W") for timestamp in timestamps],
+    )
+    progress_calls: list[tuple[int, int]] = []
+
+    result = align_primary_power(
+        db_path=db_path,
+        max_gap_seconds=300,
+        include_rows=False,
+        progress=lambda done, total: progress_calls.append((done, total)),
+    )
+
+    assert result.aligned_count == 3
+    assert result.rows == []
+    assert progress_calls == [(1, 3), (2, 3), (3, 3)]
+
+
 def test_read_ingestion_summary_exposes_run_and_source_metadata(tmp_path) -> None:
     db_path = tmp_path / "cache.sqlite3"
     timestamp = datetime(2025, 7, 1, 0, 0, tzinfo=UTC)
