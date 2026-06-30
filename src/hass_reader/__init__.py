@@ -1,2 +1,4 @@
-def main() -> None:
-    print("Hello from hass-reader!")
+from hass_reader.cli import main
+
+
+__all__ = ["main"]
