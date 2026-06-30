@@ -458,6 +458,93 @@ def test_soc_command_prints_daily_min_avg_max_summary(tmp_path, capsys) -> None:
     assert "1kWh     | #####....." in output
 
 
+def test_soc_command_writes_csv_output(tmp_path) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    output_path = tmp_path / "soc.csv"
+    _persist_reportable_run(simulation_db, battery_capacities_kwh=[1.0], persist_steps=True)
+
+    exit_code = main(
+        [
+            "soc",
+            "--simulation-db",
+            str(simulation_db),
+            "--run-id",
+            "1",
+            "--batteries",
+            "1",
+            "--bucket",
+            "day",
+            "--timezone",
+            "UTC",
+            "--start",
+            "2025-07-01",
+            "--end",
+            "2025-07-02",
+            "--output",
+            str(output_path),
+            "--overwrite",
+        ]
+    )
+
+    assert exit_code == 0
+    with output_path.open(newline="") as csv_file:
+        rows = list(csv.DictReader(csv_file))
+
+    assert list(rows[0]) == [
+        "run_id",
+        "scenario_name",
+        "capacity_kwh",
+        "efficiency",
+        "bucket_kind",
+        "bucket_start_utc",
+        "bucket_end_utc",
+        "min_soc_kwh",
+        "avg_soc_kwh",
+        "max_soc_kwh",
+        "sample_count",
+    ]
+    assert rows[0]["scenario_name"] == "1kWh"
+    assert rows[0]["bucket_kind"] == "day"
+    assert rows[0]["min_soc_kwh"] == "0"
+    assert rows[0]["avg_soc_kwh"] == "0.5"
+    assert rows[0]["max_soc_kwh"] == "1"
+
+
+def test_soc_command_refuses_to_overwrite_csv_without_option(tmp_path, capsys) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    output_path = tmp_path / "soc.csv"
+    output_path.write_text("keep me\n")
+    _persist_reportable_run(simulation_db, battery_capacities_kwh=[1.0], persist_steps=True)
+
+    exit_code = main(
+        [
+            "soc",
+            "--simulation-db",
+            str(simulation_db),
+            "--run-id",
+            "1",
+            "--batteries",
+            "1",
+            "--bucket",
+            "day",
+            "--timezone",
+            "UTC",
+            "--start",
+            "2025-07-01",
+            "--end",
+            "2025-07-02",
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert output_path.read_text() == "keep me\n"
+    assert "already exists" in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_report_command_includes_metric_mapping_and_source_metadata(tmp_path, capsys) -> None:
     simulation_db = tmp_path / "simulation.sqlite3"
     ingestion_db = tmp_path / "ingestion.sqlite3"

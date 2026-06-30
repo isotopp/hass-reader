@@ -259,7 +259,7 @@ Execution result:
 
 ## SOC-007: Export SoC Rollups as CSV
 
-Status: Not Started
+Status: Done
 
 Source story: Story 6, Export for External Plotting
 
@@ -285,6 +285,14 @@ Acceptance criteria:
 - Existing files are not overwritten without `--overwrite`.
 - Headers are stable snake_case names.
 - File errors go to stderr without tracebacks.
+
+Execution result:
+
+- Added `--output` and `--overwrite` to `hass-reader soc`.
+- Added CSV export for selected SoC rollup rows.
+- Existing files are protected unless `--overwrite` is provided.
+- Covered by `tests/test_cli.py`.
+- Committed with the `SOC-007` implementation.
 
 ## Suggested Execution Order
 

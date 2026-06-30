@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -7,6 +8,20 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from hass_reader.simulation_db import initialize_simulation_db
+
+SOC_ROLLUP_CSV_FIELDNAMES = [
+    "run_id",
+    "scenario_name",
+    "capacity_kwh",
+    "efficiency",
+    "bucket_kind",
+    "bucket_start_utc",
+    "bucket_end_utc",
+    "min_soc_kwh",
+    "avg_soc_kwh",
+    "max_soc_kwh",
+    "sample_count",
+]
 
 
 class SocReportingError(ValueError):
@@ -65,6 +80,23 @@ def format_soc_rollup_summary(report: SocRollupReport) -> str:
     lines.extend(["", "SoC chart (average)"])
     lines.extend(_format_soc_chart(report))
     return "\n".join(lines)
+
+
+def write_soc_rollup_csv(
+    report: SocRollupReport,
+    output_path: str | Path,
+    *,
+    overwrite: bool,
+) -> None:
+    resolved_path = Path(output_path)
+    if resolved_path.exists() and not overwrite:
+        raise SocReportingError(f"output file already exists: {resolved_path}")
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    with resolved_path.open("w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=SOC_ROLLUP_CSV_FIELDNAMES)
+        writer.writeheader()
+        for row in report.rows:
+            writer.writerow(_soc_rollup_csv_row(report, row))
 
 
 def check_soc_step_availability(
@@ -480,3 +512,23 @@ def _soc_bar(value: float, capacity: float) -> str:
         return ".........."
     filled = round(max(0.0, min(1.0, value / capacity)) * 10)
     return "#" * filled + "." * (10 - filled)
+
+
+def _soc_rollup_csv_row(report: SocRollupReport, row: SocRollupRow) -> dict[str, str]:
+    return {
+        "run_id": str(report.run_id),
+        "scenario_name": row.scenario_name,
+        "capacity_kwh": _format_decimal(row.capacity_kwh),
+        "efficiency": _format_decimal(row.efficiency),
+        "bucket_kind": row.bucket_kind,
+        "bucket_start_utc": row.bucket_start_utc,
+        "bucket_end_utc": row.bucket_end_utc,
+        "min_soc_kwh": _format_decimal(row.min_soc_kwh),
+        "avg_soc_kwh": _format_decimal(row.avg_soc_kwh),
+        "max_soc_kwh": _format_decimal(row.max_soc_kwh),
+        "sample_count": str(row.sample_count),
+    }
+
+
+def _format_decimal(value: float) -> str:
+    return f"{value:.12g}"

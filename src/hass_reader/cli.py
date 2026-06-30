@@ -33,6 +33,7 @@ from hass_reader.soc_reporting import (
     format_soc_rollup_summary,
     generate_soc_rollups,
     load_soc_rollups,
+    write_soc_rollup_csv,
 )
 
 
@@ -150,6 +151,8 @@ def main(
                 start_utc=args.start_utc,
                 end_utc=args.end_utc,
             )
+            if args.output is not None:
+                write_soc_rollup_csv(report, args.output, overwrite=args.overwrite)
         except Exception as error:
             print(f"error: {error}", file=sys.stderr)
             return 1
@@ -369,6 +372,8 @@ def _build_parser() -> argparse.ArgumentParser:
     soc.add_argument("--end", default=_format_local_date(default_range.end_utc))
     soc.add_argument("--timezone", default=DEFAULT_LOCAL_TIMEZONE)
     soc.add_argument("--bucket", default="day")
+    soc.add_argument("--output", type=Path, default=None)
+    soc.add_argument("--overwrite", action="store_true")
     return parser
 
 
