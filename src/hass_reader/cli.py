@@ -124,6 +124,13 @@ def main(
             return 1
         print(format_human_summary(report))
         return 0
+    if args.command == "soc":
+        validation_error = _validate_soc_args(args)
+        if validation_error is not None:
+            print(f"error: {validation_error}", file=sys.stderr)
+            return 2
+        print("error: soc reporting is not implemented yet", file=sys.stderr)
+        return 1
     parser.print_help()
     return 0
 
@@ -330,6 +337,14 @@ def _build_parser() -> argparse.ArgumentParser:
     report.add_argument("--run-id", type=int, default=None)
     report.add_argument("--output", type=Path, default=None)
     report.add_argument("--overwrite", action="store_true")
+    soc = subparsers.add_parser("soc")
+    soc.add_argument("--simulation-db", type=Path, default=DEFAULT_SIMULATION_DB_PATH)
+    soc.add_argument("--run-id", type=int, default=None)
+    soc.add_argument("--batteries", default="")
+    soc.add_argument("--start", default=_format_local_date(default_range.start_utc))
+    soc.add_argument("--end", default=_format_local_date(default_range.end_utc))
+    soc.add_argument("--timezone", default=DEFAULT_LOCAL_TIMEZONE)
+    soc.add_argument("--bucket", default="day")
     return parser
 
 
@@ -378,6 +393,46 @@ def _validate_report_args(args: argparse.Namespace) -> str | None:
     if args.run_id is not None and args.run_id <= 0:
         return "invalid --run-id: expected a positive integer"
     return None
+
+
+def _validate_soc_args(args: argparse.Namespace) -> str | None:
+    if args.run_id is not None and args.run_id <= 0:
+        return "invalid --run-id: expected a positive integer"
+    if args.bucket not in {"hour", "day"}:
+        return "invalid --bucket: expected one of hour, day"
+    selectors = _parse_soc_battery_selectors(args.batteries)
+    if args.batteries and not selectors:
+        return "invalid --batteries: provide comma-separated scenario names or positive capacities"
+    try:
+        start_utc = _parse_local_boundary(args.start, args.timezone)
+        end_utc = _parse_local_boundary(args.end, args.timezone)
+    except ValueError as error:
+        return f"invalid time range: {error}"
+    if start_utc >= end_utc:
+        return "invalid time range: expected --start to be before --end"
+    args.battery_selectors = selectors
+    args.start_utc = start_utc
+    args.end_utc = end_utc
+    return None
+
+
+def _parse_soc_battery_selectors(value: str) -> list[str]:
+    if not value:
+        return []
+    selectors = []
+    for part in value.split(","):
+        selector = part.strip()
+        if not selector:
+            return []
+        try:
+            capacity = float(selector.removesuffix("kWh"))
+        except ValueError:
+            selectors.append(selector)
+            continue
+        if capacity <= 0:
+            return []
+        selectors.append(f"{capacity:g}kWh")
+    return selectors
 
 
 def _parse_battery_capacities(value: str) -> list[float]:

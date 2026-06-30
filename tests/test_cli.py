@@ -319,6 +319,92 @@ def test_report_command_rejects_invalid_run_id_before_opening_database(tmp_path,
     assert "Traceback" not in captured.err
 
 
+def test_soc_command_rejects_invalid_bucket_before_opening_database(tmp_path, capsys) -> None:
+    exit_code = main(
+        [
+            "soc",
+            "--simulation-db",
+            str(tmp_path / "missing.sqlite3"),
+            "--bucket",
+            "minute",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "invalid --bucket" in captured.err
+    assert "simulation database not found" not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_soc_command_rejects_invalid_battery_selection_before_opening_database(
+    tmp_path,
+    capsys,
+) -> None:
+    exit_code = main(
+        [
+            "soc",
+            "--simulation-db",
+            str(tmp_path / "missing.sqlite3"),
+            "--batteries",
+            "5,,10",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "invalid --batteries" in captured.err
+    assert "simulation database not found" not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_soc_command_rejects_invalid_date_range_before_opening_database(tmp_path, capsys) -> None:
+    exit_code = main(
+        [
+            "soc",
+            "--simulation-db",
+            str(tmp_path / "missing.sqlite3"),
+            "--start",
+            "2026-02-01",
+            "--end",
+            "2026-01-01",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "invalid time range" in captured.err
+    assert "simulation database not found" not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_soc_command_accepts_valid_inputs_until_read_model_exists(tmp_path, capsys) -> None:
+    exit_code = main(
+        [
+            "soc",
+            "--simulation-db",
+            str(tmp_path / "missing.sqlite3"),
+            "--run-id",
+            "2",
+            "--batteries",
+            "10,30kWh,35",
+            "--start",
+            "2026-01-01",
+            "--end",
+            "2026-02-01",
+            "--timezone",
+            "Europe/Amsterdam",
+            "--bucket",
+            "day",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "soc reporting is not implemented yet" in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_report_command_includes_metric_mapping_and_source_metadata(tmp_path, capsys) -> None:
     simulation_db = tmp_path / "simulation.sqlite3"
     ingestion_db = tmp_path / "ingestion.sqlite3"

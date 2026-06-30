@@ -65,7 +65,7 @@ CREATE INDEX idx_simulation_soc_rollup_run_bucket
 
 ## SOC-001: Validate SoC Reporting Inputs
 
-Status: Not Started
+Status: Done
 
 Source stories: Story 1, Select Run, Battery Sizes, and Interval; Story 5, Step Storage Guidance
 
@@ -88,6 +88,16 @@ Acceptance criteria:
 - Invalid date ranges exit non-zero before database access.
 - Valid inputs reach an explicit "not implemented yet" or empty read-model placeholder during this
   ticket only.
+
+Execution result:
+
+- Added the `soc` command with `--simulation-db`, `--run-id`, `--batteries`, `--start`, `--end`,
+  `--timezone`, and `--bucket`.
+- Added validation for bucket kind, run ID, battery selectors, and date ranges before database
+  access.
+- Valid inputs reach an explicit placeholder until the read model is implemented.
+- Covered by `tests/test_cli.py`.
+- Committed with the `SOC-001` implementation.
 
 ## SOC-002: Detect Step Availability for a Simulation Run
 
