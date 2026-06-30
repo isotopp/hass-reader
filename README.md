@@ -62,6 +62,11 @@ Home Assistant stores the relevant data in typed measurements:
 - `sensor__power`: instantaneous power.
 - `sensor__energy`: daily or cumulative energy counters.
 
+Detailed discovery documentation:
+
+- [InfluxDB access](docs/influx-access.md)
+- [InfluxDB metrics](docs/influx-metrics.md)
+
 ## Discovered Metrics
 
 Yes, the required metrics are present.

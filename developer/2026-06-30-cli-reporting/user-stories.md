@@ -5,6 +5,16 @@
 As a command-line user, I want clear simulation output and machine-readable exports so that I can
 inspect results manually and reuse them in spreadsheets.
 
+## Discovery Inputs
+
+This epic depends on the discovery documentation:
+
+- `docs/influx-access.md` for the database target and default time range.
+- `docs/influx-metrics.md` for metric mapping, primary inputs, cross-checks, and assured
+  availability.
+
+Reports should surface this mapping so simulation output can be audited.
+
 ## Stories
 
 ### Story 1: Human Summary

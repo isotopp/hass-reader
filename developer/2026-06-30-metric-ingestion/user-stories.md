@@ -5,6 +5,16 @@
 As a simulator user, I want Home Assistant power data loaded into a normalized internal model so
 that calculations are independent of Influx field names and units.
 
+## Discovery Inputs
+
+This epic depends on the Influx discovery contract:
+
+- `docs/influx-access.md` for URL, database, query endpoint, and time range conventions.
+- `docs/influx-metrics.md` for measurement names, entity IDs, units, and assured availability.
+
+Metric ingestion should not rediscover the schema by default. It should use the documented primary
+inputs unless the CLI provides explicit overrides.
+
 ## Stories
 
 ### Story 1: Query Time-Series Samples

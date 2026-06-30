@@ -5,6 +5,13 @@
 As a homeowner, I want to simulate multiple battery capacities against measured grid and solar
 data so that I can compare the practical impact before buying storage.
 
+## Discovery Inputs
+
+This epic depends on `docs/influx-metrics.md` for the metric contract produced by Influx discovery.
+
+Battery simulation should consume normalized samples from the metric ingestion epic. It should not
+query InfluxDB directly and should not duplicate metric discovery logic.
+
 ## Stories
 
 ### Story 1: Simulate the Target Year
