@@ -148,6 +148,26 @@ def _create_schema(connection: sqlite3.Connection) -> None:
             soc_kwh REAL NOT NULL,
             PRIMARY KEY (scenario_id, timestamp_utc)
         );
+
+        CREATE TABLE IF NOT EXISTS simulation_soc_rollup (
+            simulation_run_id INTEGER NOT NULL REFERENCES simulation_run(id),
+            simulation_scenario_id INTEGER NOT NULL REFERENCES simulation_scenario(id),
+            bucket_kind TEXT NOT NULL,
+            bucket_start_utc TEXT NOT NULL,
+            bucket_end_utc TEXT NOT NULL,
+            min_soc_kwh REAL NOT NULL,
+            avg_soc_kwh REAL NOT NULL,
+            max_soc_kwh REAL NOT NULL,
+            sample_count INTEGER NOT NULL,
+            PRIMARY KEY (
+                simulation_scenario_id,
+                bucket_kind,
+                bucket_start_utc
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_simulation_soc_rollup_run_bucket
+            ON simulation_soc_rollup(simulation_run_id, bucket_kind, bucket_start_utc);
         """
     )
 

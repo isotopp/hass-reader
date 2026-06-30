@@ -132,7 +132,7 @@ Execution result:
 
 ## SOC-003: Build Hourly and Daily SoC Rollups
 
-Status: Not Started
+Status: Done
 
 Source story: Story 2, Build Efficient SoC Rollups
 
@@ -152,6 +152,14 @@ Acceptance criteria:
 - Hourly buckets group timestamps by UTC hour.
 - Daily buckets group timestamps by reporting timezone day, then store UTC bucket bounds.
 - Tests verify min, average, max, and sample count from small fixture data.
+
+Execution result:
+
+- Added `simulation_soc_rollup` schema creation to the simulation SQLite database.
+- Added `generate_soc_rollups` for `hour` and `day` bucket kinds.
+- Rollup generation stores min, average, max, and sample count and is idempotent.
+- Covered by `tests/test_soc_reporting.py`.
+- Committed with the `SOC-003` implementation.
 
 ## SOC-004: Read SoC Rollups for Selected Intervals
 
