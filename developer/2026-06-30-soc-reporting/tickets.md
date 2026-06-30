@@ -197,7 +197,7 @@ Execution result:
 
 ## SOC-005: Render Terminal SoC Charts
 
-Status: Not Started
+Status: Done
 
 Source story: Story 3, Terminal SoC Chart
 
@@ -241,6 +241,14 @@ Acceptance criteria:
 - Empty and full days are explicitly marked.
 - Multiple selected battery capacities can be compared.
 - Tests use small rollup fixtures with known empty/full days.
+
+Execution result:
+
+- `hass-reader soc --bucket day` now generates day rollups, loads the selected interval, and prints
+  a min/avg/max SoC summary.
+- Daily output marks batteries that reached empty or full.
+- Covered by `tests/test_cli.py`.
+- Committed with the `SOC-006` implementation.
 
 ## SOC-007: Export SoC Rollups as CSV
 

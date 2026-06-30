@@ -378,7 +378,7 @@ def test_soc_command_rejects_invalid_date_range_before_opening_database(tmp_path
     assert "Traceback" not in captured.err
 
 
-def test_soc_command_accepts_valid_inputs_until_read_model_exists(tmp_path, capsys) -> None:
+def test_soc_command_accepts_valid_inputs_and_prints_summary(tmp_path, capsys) -> None:
     simulation_db = tmp_path / "simulation.sqlite3"
     _persist_reportable_run(simulation_db, battery_capacities_kwh=[1.0], persist_steps=True)
 
@@ -392,9 +392,9 @@ def test_soc_command_accepts_valid_inputs_until_read_model_exists(tmp_path, caps
             "--batteries",
             "1",
             "--start",
-            "2026-01-01",
+            "2025-07-01",
             "--end",
-            "2026-02-01",
+            "2025-07-02",
             "--timezone",
             "Europe/Amsterdam",
             "--bucket",
@@ -404,7 +404,8 @@ def test_soc_command_accepts_valid_inputs_until_read_model_exists(tmp_path, caps
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert "soc step data available: run_id=1 scenarios=1kWh" in captured.out
+    assert "SoC report run 1 bucket=day" in captured.out
+    assert "1kWh" in captured.out
     assert "Traceback" not in captured.err
 
 
@@ -418,6 +419,41 @@ def test_soc_command_reports_missing_step_data(tmp_path, capsys) -> None:
     assert exit_code == 1
     assert "simulate --store-steps" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_soc_command_prints_daily_min_avg_max_summary(tmp_path, capsys) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    _persist_reportable_run(simulation_db, battery_capacities_kwh=[1.0], persist_steps=True)
+
+    exit_code = main(
+        [
+            "soc",
+            "--simulation-db",
+            str(simulation_db),
+            "--run-id",
+            "1",
+            "--batteries",
+            "1",
+            "--bucket",
+            "day",
+            "--timezone",
+            "UTC",
+            "--start",
+            "2025-07-01",
+            "--end",
+            "2025-07-02",
+        ]
+    )
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "SoC report run 1 bucket=day" in output
+    assert "Date        Scenario  Min kWh  Avg kWh  Max kWh  Samples  State" in output
+    assert "2025-07-01  1kWh" in output
+    assert "0.00" in output
+    assert "0.50" in output
+    assert "1.00" in output
+    assert "empty,full" in output
 
 
 def test_report_command_includes_metric_mapping_and_source_metadata(tmp_path, capsys) -> None:

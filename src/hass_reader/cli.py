@@ -29,7 +29,11 @@ from hass_reader.simulation_db import (
     persist_simulation_result,
     resolve_simulation_db_path,
 )
-from hass_reader.soc_reporting import check_soc_step_availability
+from hass_reader.soc_reporting import (
+    format_soc_rollup_summary,
+    generate_soc_rollups,
+    load_soc_rollups,
+)
 
 
 DEFAULT_MAX_GAP_SECONDS = 900
@@ -131,16 +135,25 @@ def main(
             print(f"error: {validation_error}", file=sys.stderr)
             return 2
         try:
-            availability = check_soc_step_availability(
+            generation_result = generate_soc_rollups(
                 args.simulation_db,
                 run_id=args.run_id,
                 selectors=args.battery_selectors,
+                bucket_kind=args.bucket,
+                timezone_name=args.timezone,
+            )
+            report = load_soc_rollups(
+                args.simulation_db,
+                run_id=generation_result.run_id,
+                selectors=args.battery_selectors,
+                bucket_kind=args.bucket,
+                start_utc=args.start_utc,
+                end_utc=args.end_utc,
             )
         except Exception as error:
             print(f"error: {error}", file=sys.stderr)
             return 1
-        scenario_names = ",".join(scenario.name for scenario in availability.scenarios)
-        print(f"soc step data available: run_id={availability.run_id} scenarios={scenario_names}")
+        print(format_soc_rollup_summary(report))
         return 0
     parser.print_help()
     return 0

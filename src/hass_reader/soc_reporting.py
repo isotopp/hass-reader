@@ -56,6 +56,15 @@ class SocRollupReport:
     rows: list[SocRollupRow]
 
 
+def format_soc_rollup_summary(report: SocRollupReport) -> str:
+    lines = [
+        f"SoC report run {report.run_id} bucket={report.bucket_kind}",
+        "Date        Scenario  Min kWh  Avg kWh  Max kWh  Samples  State",
+    ]
+    lines.extend(_format_soc_rollup_row(row) for row in report.rows)
+    return "\n".join(lines)
+
+
 def check_soc_step_availability(
     db_path: str | Path,
     *,
@@ -427,3 +436,21 @@ def _parse_utc_timestamp(value: str) -> datetime:
 
 def _format_timestamp(value: datetime) -> str:
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _format_soc_rollup_row(row: SocRollupRow) -> str:
+    flags = []
+    if row.min_soc_kwh <= 1e-9:
+        flags.append("empty")
+    if row.max_soc_kwh >= row.capacity_kwh - 1e-9:
+        flags.append("full")
+    state = ",".join(flags) if flags else "-"
+    return (
+        f"{row.bucket_start_utc[:10]}  "
+        f"{row.scenario_name:<8} "
+        f"{row.min_soc_kwh:>7.2f} "
+        f"{row.avg_soc_kwh:>8.2f} "
+        f"{row.max_soc_kwh:>8.2f} "
+        f"{row.sample_count:>8}  "
+        f"{state}"
+    )
