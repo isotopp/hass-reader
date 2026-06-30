@@ -14,6 +14,7 @@ This epic depends on the discovery documentation:
   availability.
 - `docs/metric-ingestion.md` for SQLite run metadata, sample counts, aligned power rows, and cache
   behavior.
+- `docs/battery-simulation.md` for simulation run, scenario, summary, and optional step output.
 
 Reports should surface this mapping so simulation output can be audited.
 

@@ -90,7 +90,7 @@ is required.
 
 ## SIM-001: Create Simulation SQLite Schema
 
-Status: Ready
+Status: Done
 
 Source story: Story 5, Persist Simulation Results Separately
 
@@ -111,9 +111,15 @@ Acceptance criteria:
 - Tests use temporary SQLite files.
 - Deleting the simulation database does not affect the ingestion cache.
 
+Execution result:
+
+- Implemented in `src/hass_reader/simulation_db.py`.
+- Covered by `tests/test_simulation_db.py`.
+- Committed as `9f8dfbc Add simulation database schema`.
+
 ## SIM-002: Parse Simulation CLI Options
 
-Status: Ready
+Status: Done
 
 Source stories: Story 1, Simulate the Target Year; Story 2, Parse Battery Capacities; Story 3,
 Parse Battery Efficiency; Story 5, Persist Simulation Results Separately
@@ -136,9 +142,15 @@ Acceptance criteria:
 - Defaults match the existing ingestion time range.
 - CLI failures do not print Python stack traces.
 
+Execution result:
+
+- Implemented in `src/hass_reader/cli.py`.
+- Covered by `tests/test_cli.py`.
+- Committed as `97be502 Add simulation CLI parsing`.
+
 ## SIM-003: Implement Battery Scenario State
 
-Status: Ready
+Status: Done
 
 Source stories: Story 3, Parse Battery Efficiency; Story 4, Run All Battery Scenarios in One Pass
 
@@ -159,9 +171,15 @@ Acceptance criteria:
 - Losses are recorded only on discharge.
 - Unit tests cover full charge, empty discharge, partial discharge, and efficiency loss.
 
+Execution result:
+
+- Implemented in `src/hass_reader/battery_simulation.py`.
+- Covered by `tests/test_battery_simulation.py`.
+- Committed as `7079a35 Add battery scenario state`.
+
 ## SIM-004: Process All Scenarios in One Data Pass
 
-Status: Ready
+Status: Done
 
 Source story: Story 4, Run All Battery Scenarios in One Pass
 
@@ -181,9 +199,15 @@ Acceptance criteria:
 - The no-battery baseline is always included.
 - Tests prove two configured batteries are simulated in one pass over a fake reader.
 
+Execution result:
+
+- Implemented in `src/hass_reader/battery_simulation.py`.
+- Covered by `tests/test_battery_simulation.py`.
+- Committed as `485c863 Simulate battery scenarios in one pass`.
+
 ## SIM-005: Handle Irregular Samples and Gaps
 
-Status: Ready
+Status: Done
 
 Source story: Story 6, Handle Irregular Samples
 
@@ -202,9 +226,15 @@ Acceptance criteria:
 - Large gaps do not silently distort yearly totals.
 - Unit tests cover irregular intervals, duplicate timestamps, and gap flags.
 
+Execution result:
+
+- Implemented in `src/hass_reader/battery_simulation.py`.
+- Covered by `tests/test_battery_simulation.py`.
+- Committed as `fc6776d Handle simulation intervals and gaps`.
+
 ## SIM-006: Persist Simulation Runs and Summaries
 
-Status: Ready
+Status: Done
 
 Source stories: Story 5, Persist Simulation Results Separately; Story 7, Summarize Baseline and
 Battery Scenarios
@@ -226,9 +256,15 @@ Acceptance criteria:
 - Failed runs are visible in the simulation database.
 - The ingestion cache database is never modified by simulation persistence.
 
+Execution result:
+
+- Implemented in `src/hass_reader/simulation_db.py`.
+- Covered by `tests/test_simulation_db.py`.
+- Committed as `95a4385 Persist simulation summaries`.
+
 ## SIM-007: Add Optional Step-Level Persistence
 
-Status: Ready
+Status: Done
 
 Source stories: Story 4, Run All Battery Scenarios in One Pass; Story 6, Handle Irregular Samples
 
@@ -247,9 +283,17 @@ Acceptance criteria:
 - Step persistence can be disabled to reduce database size.
 - Tests verify step rows for at least baseline and one battery scenario.
 
+Execution result:
+
+- Implemented in `src/hass_reader/battery_simulation.py`, `src/hass_reader/cli.py`, and
+  `src/hass_reader/simulation_db.py`.
+- Covered by `tests/test_battery_simulation.py`, `tests/test_cli.py`, and
+  `tests/test_simulation_db.py`.
+- Committed as `4b6aae6 Persist optional simulation steps`.
+
 ## SIM-008: Document Simulation Output Contract
 
-Status: Ready
+Status: Done
 
 Source stories: Story 5, Persist Simulation Results Separately; Story 7, Summarize Baseline and
 Battery Scenarios
@@ -270,6 +314,13 @@ Acceptance criteria:
 - Users know they can delete the simulation database to reset simulation output.
 - Reporting has a clear contract for reading simulation results.
 - Efficiency semantics are documented in one place.
+
+Execution result:
+
+- Completed in `docs/battery-simulation.md`.
+- Linked from `README.md`.
+- Follow-up reporting pointer added to
+  `developer/2026-06-30-cli-reporting/user-stories.md`.
 
 ## Suggested Execution Order
 
