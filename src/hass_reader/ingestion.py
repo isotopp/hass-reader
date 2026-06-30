@@ -50,6 +50,35 @@ class AlignmentResult:
 
 
 @dataclass(frozen=True)
+class IngestionRunSummary:
+    id: int
+    influx_url: str
+    influx_database: str
+    local_timezone: str
+    query_start_utc: str
+    query_end_utc: str
+    status: str
+
+
+@dataclass(frozen=True)
+class MetricSourceSummary:
+    role: str
+    measurement: str
+    entity_id: str
+    source_kind: str
+    expected_unit: str
+    normalized_unit: str
+    is_primary: bool
+    sample_count: int
+
+
+@dataclass(frozen=True)
+class IngestionSummary:
+    latest_run: IngestionRunSummary | None
+    sources: list[MetricSourceSummary]
+
+
+@dataclass(frozen=True)
 class MetricSourceRow:
     id: int
     role: str
@@ -518,6 +547,50 @@ def align_primary_power(
         return AlignmentResult(aligned_count=len(public_rows), rows=public_rows)
 
 
+def read_ingestion_summary(*, db_path: str | Path | None = None) -> IngestionSummary:
+    resolved_path = initialize_cache(resolve_cache_path(db_path))
+    with sqlite3.connect(resolved_path) as connection:
+        latest_run = _load_latest_run_summary(connection)
+        source_rows = connection.execute(
+            """
+            SELECT
+                metric_source.role,
+                metric_source.measurement,
+                metric_source.entity_id,
+                metric_source.source_kind,
+                metric_source.expected_unit,
+                metric_source.normalize_to_unit,
+                metric_source.is_primary,
+                COALESCE((
+                    SELECT fetch_window.sample_count
+                    FROM fetch_window
+                    WHERE fetch_window.metric_source_id = metric_source.id
+                      AND fetch_window.status = 'completed'
+                    ORDER BY fetch_window.id DESC
+                    LIMIT 1
+                ), 0) AS sample_count
+            FROM metric_source
+            ORDER BY metric_source.is_primary DESC, metric_source.role
+            """
+        ).fetchall()
+        return IngestionSummary(
+            latest_run=latest_run,
+            sources=[
+                MetricSourceSummary(
+                    role=str(row[0]),
+                    measurement=str(row[1]),
+                    entity_id=str(row[2]),
+                    source_kind=str(row[3]),
+                    expected_unit=str(row[4]),
+                    normalized_unit=str(row[5]),
+                    is_primary=bool(row[6]),
+                    sample_count=int(row[7]),
+                )
+                for row in source_rows
+            ],
+        )
+
+
 def _format_optional_time(value: datetime | None) -> str | None:
     if value is None:
         return None
@@ -681,3 +754,32 @@ def _optional_power_value(
         flags.append(f"{flag}_gap")
         return None, age_seconds, sample.timestamp_utc
     return sample.value, age_seconds, sample.timestamp_utc
+
+
+def _load_latest_run_summary(connection: sqlite3.Connection) -> IngestionRunSummary | None:
+    row = connection.execute(
+        """
+        SELECT
+            id,
+            influx_url,
+            influx_database,
+            local_timezone,
+            query_start_utc,
+            query_end_utc,
+            status
+        FROM ingestion_run
+        ORDER BY id DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    if row is None:
+        return None
+    return IngestionRunSummary(
+        id=int(row[0]),
+        influx_url=str(row[1]),
+        influx_database=str(row[2]),
+        local_timezone=str(row[3]),
+        query_start_utc=str(row[4]),
+        query_end_utc=str(row[5]),
+        status=str(row[6]),
+    )

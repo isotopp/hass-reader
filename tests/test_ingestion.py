@@ -10,6 +10,7 @@ from hass_reader.ingestion import (
     UnitNormalizationError,
     ingest_raw_metric,
     normalize_metric,
+    read_ingestion_summary,
 )
 
 
@@ -288,6 +289,34 @@ def test_align_primary_power_flags_values_beyond_gap(tmp_path) -> None:
     assert result.rows[1]["solar_production_kw"] is None
     assert result.rows[1]["max_source_age_seconds"] == 600
     assert result.rows[1]["gap_flags"] == "import_gap,solar_gap"
+
+
+def test_read_ingestion_summary_exposes_run_and_source_metadata(tmp_path) -> None:
+    db_path = tmp_path / "cache.sqlite3"
+    timestamp = datetime(2025, 7, 1, 0, 0, tzinfo=UTC)
+    _ingest_and_normalize(db_path, "grid_import_power", [(timestamp, 1.0, "kW")])
+
+    summary = read_ingestion_summary(db_path=db_path)
+
+    assert summary.latest_run is not None
+    assert summary.latest_run.influx_url == "http://192.168.1.10:8086"
+    assert summary.latest_run.influx_database == "hass"
+    assert summary.latest_run.local_timezone == "Europe/Amsterdam"
+    assert summary.latest_run.query_start_utc == "2025-06-30T22:00:00Z"
+    assert summary.latest_run.query_end_utc == "2026-06-30T22:00:00Z"
+    grid_import = next(source for source in summary.sources if source.role == "grid_import_power")
+    zonneplan_cross_check = next(
+        source for source in summary.sources if source.role == "zonneplan_p1_net_power"
+    )
+    assert grid_import.measurement == "sensor__power"
+    assert grid_import.entity_id == "power_consumed"
+    assert grid_import.expected_unit == "kW"
+    assert grid_import.normalized_unit == "kW"
+    assert grid_import.source_kind == "slimmelezer_p1"
+    assert grid_import.is_primary is True
+    assert grid_import.sample_count == 1
+    assert zonneplan_cross_check.is_primary is False
+    assert zonneplan_cross_check.source_kind == "zonneplan_cross_check"
 
 
 def _ingest_and_normalize(
