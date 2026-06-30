@@ -163,3 +163,101 @@ def test_persist_failed_simulation_run_records_error(tmp_path) -> None:
         ).fetchone()
 
     assert row == ("failed", "aligned data missing")
+
+
+def test_persist_simulation_result_writes_steps_when_enabled(tmp_path) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    result = simulate_scenarios(
+        [
+            AlignedPowerRow(datetime(2025, 7, 1, 0, 0, tzinfo=UTC), 0.0, 1.0, 1.0, ""),
+            AlignedPowerRow(datetime(2025, 7, 1, 1, 0, tzinfo=UTC), 1.0, 0.0, 0.0, ""),
+            AlignedPowerRow(datetime(2025, 7, 1, 2, 0, tzinfo=UTC), 0.0, 0.0, 0.0, ""),
+        ],
+        battery_capacities_kwh=[1.0],
+        efficiency=0.8,
+    )
+
+    run_id = persist_simulation_result(
+        db_path=simulation_db,
+        ingestion_db_path=tmp_path / "ingestion.sqlite3",
+        query_start_utc=datetime(2025, 6, 30, 22, 0, tzinfo=UTC),
+        query_end_utc=datetime(2026, 6, 30, 22, 0, tzinfo=UTC),
+        result=result,
+        persist_steps=True,
+    )
+
+    with sqlite3.connect(simulation_db) as connection:
+        steps = connection.execute(
+            """
+            SELECT
+                simulation_scenario.name,
+                simulation_step.timestamp_utc,
+                simulation_step.import_kwh,
+                simulation_step.export_kwh,
+                simulation_step.charged_kwh,
+                simulation_step.discharged_kwh,
+                simulation_step.losses_kwh,
+                simulation_step.soc_kwh
+            FROM simulation_step
+            JOIN simulation_scenario ON simulation_scenario.id = simulation_step.scenario_id
+            WHERE simulation_scenario.simulation_run_id = ?
+            ORDER BY simulation_step.timestamp_utc, simulation_scenario.id
+            """,
+            (run_id,),
+        ).fetchall()
+
+    rounded_steps = [
+        (
+            name,
+            timestamp,
+            round(import_kwh, 6),
+            round(export_kwh, 6),
+            round(charged_kwh, 6),
+            round(discharged_kwh, 6),
+            round(losses_kwh, 6),
+            round(soc_kwh, 6),
+        )
+        for (
+            name,
+            timestamp,
+            import_kwh,
+            export_kwh,
+            charged_kwh,
+            discharged_kwh,
+            losses_kwh,
+            soc_kwh,
+        ) in steps
+    ]
+    assert rounded_steps == [
+        ("baseline", "2025-07-01T00:00:00Z", 0.0, 1.0, 0.0, 0.0, 0.0, 0.0),
+        ("1kWh", "2025-07-01T00:00:00Z", 0.0, 0.0, 1.0, 0.0, 0.0, 1.0),
+        ("baseline", "2025-07-01T01:00:00Z", 1.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        ("1kWh", "2025-07-01T01:00:00Z", 0.2, 0.0, 0.0, 1.0, 0.2, 0.0),
+    ]
+
+
+def test_persist_simulation_result_skips_steps_by_default(tmp_path) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    result = simulate_scenarios(
+        [
+            AlignedPowerRow(datetime(2025, 7, 1, 0, 0, tzinfo=UTC), 0.0, 1.0, 1.0, ""),
+            AlignedPowerRow(datetime(2025, 7, 1, 1, 0, tzinfo=UTC), 0.0, 0.0, 0.0, ""),
+        ],
+        battery_capacities_kwh=[1.0],
+        efficiency=0.8,
+    )
+
+    persist_simulation_result(
+        db_path=simulation_db,
+        ingestion_db_path=tmp_path / "ingestion.sqlite3",
+        query_start_utc=datetime(2025, 6, 30, 22, 0, tzinfo=UTC),
+        query_end_utc=datetime(2026, 6, 30, 22, 0, tzinfo=UTC),
+        result=result,
+    )
+
+    with sqlite3.connect(simulation_db) as connection:
+        step_count = connection.execute("SELECT count(*) FROM simulation_step").fetchone()[0]
+        summary_count = connection.execute("SELECT count(*) FROM simulation_summary").fetchone()[0]
+
+    assert step_count == 0
+    assert summary_count == 2

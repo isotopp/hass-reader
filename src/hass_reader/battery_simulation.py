@@ -38,6 +38,19 @@ class AlignedPowerRow:
 class SimulationResult:
     scenarios: list[BaselineScenario | BatteryScenario]
     skipped_intervals: list[dict[str, str]]
+    steps: list[SimulationStepRecord]
+
+
+@dataclass(frozen=True)
+class SimulationStepRecord:
+    scenario_name: str
+    timestamp_utc: datetime
+    import_kwh: float
+    export_kwh: float
+    charged_kwh: float
+    discharged_kwh: float
+    losses_kwh: float
+    soc_kwh: float
 
 
 class SimulationInputError(ValueError):
@@ -134,6 +147,7 @@ def simulate_scenarios(
 
     previous: AlignedPowerRow | None = None
     skipped_intervals: list[dict[str, str]] = []
+    steps: list[SimulationStepRecord] = []
     for current in rows:
         if previous is not None:
             duration_hours = (current.timestamp_utc - previous.timestamp_utc).total_seconds() / 3600
@@ -155,13 +169,25 @@ def simulate_scenarios(
             grid_import_kwh = previous.grid_import_kw * duration_hours
             grid_export_kwh = previous.grid_export_kw * duration_hours
             for scenario in scenarios:
-                scenario.apply_step(
+                step = scenario.apply_step(
                     grid_import_kwh=grid_import_kwh,
                     grid_export_kwh=grid_export_kwh,
                 )
+                steps.append(
+                    SimulationStepRecord(
+                        scenario_name=scenario.name,
+                        timestamp_utc=previous.timestamp_utc,
+                        import_kwh=step.import_kwh,
+                        export_kwh=step.export_kwh,
+                        charged_kwh=step.charged_kwh,
+                        discharged_kwh=step.discharged_kwh,
+                        losses_kwh=step.losses_kwh,
+                        soc_kwh=step.soc_kwh,
+                    )
+                )
         previous = current
 
-    return SimulationResult(scenarios=scenarios, skipped_intervals=skipped_intervals)
+    return SimulationResult(scenarios=scenarios, skipped_intervals=skipped_intervals, steps=steps)
 
 
 def _format_timestamp(value: datetime) -> str:

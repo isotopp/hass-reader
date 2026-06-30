@@ -211,3 +211,22 @@ def test_simulate_scenarios_skips_intervals_starting_from_gap_rows() -> None:
             "reason": "import_gap",
         }
     ]
+
+
+def test_simulate_scenarios_records_step_results_per_scenario() -> None:
+    rows = [
+        AlignedPowerRow(datetime(2025, 7, 1, 0, 0, tzinfo=UTC), 0.0, 1.0, 1.0, ""),
+        AlignedPowerRow(datetime(2025, 7, 1, 1, 0, tzinfo=UTC), 1.0, 0.0, 0.0, ""),
+        AlignedPowerRow(datetime(2025, 7, 1, 2, 0, tzinfo=UTC), 0.0, 0.0, 0.0, ""),
+    ]
+
+    result = simulate_scenarios(rows, battery_capacities_kwh=[1.0], efficiency=0.8)
+
+    assert [(step.scenario_name, step.timestamp_utc.isoformat()) for step in result.steps] == [
+        ("baseline", "2025-07-01T00:00:00+00:00"),
+        ("1kWh", "2025-07-01T00:00:00+00:00"),
+        ("baseline", "2025-07-01T01:00:00+00:00"),
+        ("1kWh", "2025-07-01T01:00:00+00:00"),
+    ]
+    assert result.steps[1].charged_kwh == 1.0
+    assert result.steps[3].discharged_kwh == 1.0

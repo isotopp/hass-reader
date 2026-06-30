@@ -5,7 +5,12 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-from hass_reader.battery_simulation import BaselineScenario, BatteryScenario, SimulationResult
+from hass_reader.battery_simulation import (
+    BaselineScenario,
+    BatteryScenario,
+    SimulationResult,
+    SimulationStepRecord,
+)
 
 
 DEFAULT_SIMULATION_DB_PATH = Path("var/hass-reader-simulation.sqlite3")
@@ -41,6 +46,7 @@ def persist_simulation_result(
     query_start_utc: datetime,
     query_end_utc: datetime,
     result: SimulationResult,
+    persist_steps: bool = False,
 ) -> int:
     resolved_path = initialize_simulation_db(db_path)
     with sqlite3.connect(resolved_path) as connection:
@@ -53,9 +59,13 @@ def persist_simulation_result(
             status="running",
             error_message=None,
         )
+        scenario_ids_by_name: dict[str, int] = {}
         for scenario in result.scenarios:
             scenario_id = _insert_simulation_scenario(connection, run_id=run_id, scenario=scenario)
+            scenario_ids_by_name[scenario.name] = scenario_id
             _insert_simulation_summary(connection, scenario_id=scenario_id, scenario=scenario)
+        if persist_steps:
+            _insert_simulation_steps(connection, scenario_ids_by_name, result.steps)
         _complete_simulation_run(connection, run_id=run_id, status="completed", error_message=None)
         return run_id
 
@@ -263,6 +273,41 @@ def _insert_simulation_summary(
             summary.losses_kwh,
             summary.ending_soc_kwh,
         ),
+    )
+
+
+def _insert_simulation_steps(
+    connection: sqlite3.Connection,
+    scenario_ids_by_name: dict[str, int],
+    steps: list[SimulationStepRecord],
+) -> None:
+    connection.executemany(
+        """
+        INSERT INTO simulation_step (
+            scenario_id,
+            timestamp_utc,
+            import_kwh,
+            export_kwh,
+            charged_kwh,
+            discharged_kwh,
+            losses_kwh,
+            soc_kwh
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (
+                scenario_ids_by_name[step.scenario_name],
+                _format_timestamp(step.timestamp_utc),
+                step.import_kwh,
+                step.export_kwh,
+                step.charged_kwh,
+                step.discharged_kwh,
+                step.losses_kwh,
+                step.soc_kwh,
+            )
+            for step in steps
+        ],
     )
 
 

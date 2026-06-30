@@ -86,3 +86,28 @@ def test_simulate_command_rejects_invalid_efficiency(capsys) -> None:
     assert exit_code == 2
     assert "invalid --efficiency" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_simulate_command_parses_store_steps(tmp_path) -> None:
+    calls = []
+
+    def runner(args) -> SimulationCommandResult:
+        calls.append(args)
+        return SimulationCommandResult(run_id=9, scenario_count=2)
+
+    exit_code = main(
+        [
+            "simulate",
+            "--batteries",
+            "5",
+            "--store-steps",
+            "--ingestion-db",
+            str(tmp_path / "ingestion.sqlite3"),
+            "--simulation-db",
+            str(tmp_path / "simulation.sqlite3"),
+        ],
+        simulation_runner=runner,
+    )
+
+    assert exit_code == 0
+    assert calls[0].store_steps is True

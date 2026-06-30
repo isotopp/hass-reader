@@ -188,6 +188,7 @@ def _build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--start", default=_format_local_date(default_range.start_utc))
     simulate.add_argument("--end", default=_format_local_date(default_range.end_utc))
     simulate.add_argument("--timezone", default=DEFAULT_LOCAL_TIMEZONE)
+    simulate.add_argument("--store-steps", action="store_true")
     return parser
 
 
