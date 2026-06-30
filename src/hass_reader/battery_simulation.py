@@ -156,7 +156,7 @@ def simulate_scenarios(
                     "aligned_power_sample rows have non-increasing timestamps: "
                     f"{previous.timestamp_utc.isoformat()} then {current.timestamp_utc.isoformat()}"
                 )
-            if previous.gap_flags and skip_gap_intervals:
+            if skip_gap_intervals and _has_missing_grid_value(previous.gap_flags):
                 skipped_intervals.append(
                     {
                         "start_utc": _format_timestamp(previous.timestamp_utc),
@@ -188,6 +188,11 @@ def simulate_scenarios(
         previous = current
 
     return SimulationResult(scenarios=scenarios, skipped_intervals=skipped_intervals, steps=steps)
+
+
+def _has_missing_grid_value(gap_flags: str) -> bool:
+    flags = {flag.strip() for flag in gap_flags.split(",")}
+    return "import_missing" in flags or "export_missing" in flags
 
 
 def _format_timestamp(value: datetime) -> str:

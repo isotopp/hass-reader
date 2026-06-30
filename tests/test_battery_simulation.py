@@ -176,7 +176,7 @@ def test_simulate_scenarios_rejects_duplicate_timestamps() -> None:
         simulate_scenarios(rows, battery_capacities_kwh=[], efficiency=0.9)
 
 
-def test_simulate_scenarios_skips_intervals_starting_from_gap_rows() -> None:
+def test_simulate_scenarios_keeps_stale_grid_gap_intervals() -> None:
     rows = [
         AlignedPowerRow(
             timestamp_utc=datetime(2025, 7, 1, 0, 0, tzinfo=UTC),
@@ -203,12 +203,43 @@ def test_simulate_scenarios_skips_intervals_starting_from_gap_rows() -> None:
 
     result = simulate_scenarios(rows, battery_capacities_kwh=[], efficiency=0.9)
 
+    assert result.scenarios[0].summary.imported_kwh == 11.0
+    assert result.skipped_intervals == []
+
+
+def test_simulate_scenarios_skips_intervals_starting_from_missing_grid_rows() -> None:
+    rows = [
+        AlignedPowerRow(
+            timestamp_utc=datetime(2025, 7, 1, 0, 0, tzinfo=UTC),
+            grid_import_kw=10.0,
+            grid_export_kw=0.0,
+            solar_production_kw=0.0,
+            gap_flags="import_missing",
+        ),
+        AlignedPowerRow(
+            timestamp_utc=datetime(2025, 7, 1, 1, 0, tzinfo=UTC),
+            grid_import_kw=1.0,
+            grid_export_kw=0.0,
+            solar_production_kw=0.0,
+            gap_flags="",
+        ),
+        AlignedPowerRow(
+            timestamp_utc=datetime(2025, 7, 1, 2, 0, tzinfo=UTC),
+            grid_import_kw=0.0,
+            grid_export_kw=0.0,
+            solar_production_kw=0.0,
+            gap_flags="",
+        ),
+    ]
+
+    result = simulate_scenarios(rows, battery_capacities_kwh=[], efficiency=0.9)
+
     assert result.scenarios[0].summary.imported_kwh == 1.0
     assert result.skipped_intervals == [
         {
             "start_utc": "2025-07-01T00:00:00Z",
             "end_utc": "2025-07-01T01:00:00Z",
-            "reason": "import_gap",
+            "reason": "import_missing",
         }
     ]
 
