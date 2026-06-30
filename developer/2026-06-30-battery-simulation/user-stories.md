@@ -15,6 +15,10 @@ query InfluxDB directly and should not duplicate metric discovery logic.
 Battery simulation should read simulation-ready inputs from `aligned_power_sample`, documented in
 `docs/metric-ingestion.md`.
 
+Simulation output should be written to a separate SQLite database from the ingestion cache. The
+default simulation database should be easy to delete when the user wants to reset simulation
+results without removing downloaded Influx data.
+
 ## Stories
 
 ### Story 1: Simulate the Target Year
@@ -47,30 +51,39 @@ model storage losses.
 Acceptance criteria:
 
 - `--efficiency` accepts values where `0 < efficiency <= 1`.
+- Efficiency is interpreted as discharge-side efficiency.
+- Charging stores exported energy without loss until capacity is reached.
+- Discharging removes energy from the battery and offsets only `discharged_kwh * efficiency` of
+  grid import.
 - The default efficiency is documented.
 - Invalid efficiency values fail before querying InfluxDB.
 
-### Story 4: Simulate One Battery
+### Story 4: Run All Battery Scenarios in One Pass
 
-As a user, I want the simulator to calculate import and export after adding one battery so that I
-can compare against the no-battery baseline.
-
-Acceptance criteria:
-
-- Exported energy charges the battery until full.
-- Imported energy is offset by battery discharge until empty.
-- The simulation tracks charged energy, discharged energy, losses, and ending state of charge.
-
-### Story 5: Compare Multiple Batteries
-
-As a user, I want the simulator to run the same period for every requested capacity so that the
-results are directly comparable.
+As a user, I want the simulator to process the cached year of aligned power data once for the
+baseline and all configured battery sizes so that comparison runs are efficient and consistent.
 
 Acceptance criteria:
 
-- Each capacity uses the same input samples.
-- Output includes one row per battery capacity.
-- The baseline no-battery import/export is included in the report.
+- The simulator reads each `aligned_power_sample` row once per run.
+- The simulator maintains one in-memory scenario state for no-battery and one for each configured
+  battery size.
+- Each battery scenario has current state of charge, capacity, efficiency, charged energy,
+  discharged energy, and losses.
+- Every scenario uses the same source rows and timestep calculations.
+
+### Story 5: Persist Simulation Results Separately
+
+As a user, I want simulation results written to a separate SQLite database so that I can reset
+simulations without deleting cached Influx data.
+
+Acceptance criteria:
+
+- The simulator reads from the ingestion cache SQLite database.
+- The simulator writes to a different simulation SQLite database.
+- The default simulation database path is documented.
+- Deleting the simulation database resets simulation output without affecting the ingestion cache.
+- A simulation run records the source ingestion database path and queried time range.
 
 ### Story 6: Handle Irregular Samples
 
@@ -82,3 +95,16 @@ Acceptance criteria:
 - Energy is calculated from elapsed time between samples.
 - Very large gaps are excluded or reported according to configuration.
 - Unit tests cover irregular intervals.
+
+### Story 7: Summarize Baseline and Battery Scenarios
+
+As a user, I want one summary row per scenario so that I can compare no-battery behavior against all
+configured battery capacities.
+
+Acceptance criteria:
+
+- The no-battery baseline is always included.
+- Each configured battery capacity has exactly one summary row per simulation run.
+- Summary rows include imported kWh, exported kWh, charged kWh, discharged kWh, losses kWh, and
+  ending state of charge.
+- Summary rows include the capacity and efficiency used by the scenario.
