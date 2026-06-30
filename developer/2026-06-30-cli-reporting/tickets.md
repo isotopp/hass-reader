@@ -59,7 +59,7 @@ an option for it.
 
 ## REP-001: Read Completed Simulation Runs for Reporting
 
-Status: Not Started
+Status: Done
 
 Source stories: Story 1, Human Summary; Story 2, CSV Output
 
@@ -81,6 +81,12 @@ Acceptance criteria:
 - A selected `--run-id` reports that run rather than the latest run.
 - Failed or incomplete runs are not silently reported as successful results.
 - Missing baseline data fails with a focused error written to stderr through the CLI.
+
+Execution result:
+
+- Implemented in `src/hass_reader/reporting.py`.
+- Covered by `tests/test_reporting.py`.
+- Committed with the `REP-001` implementation.
 
 ## REP-002: Add Compact Human Summary Output
 
