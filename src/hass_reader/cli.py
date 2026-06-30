@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import sqlite3
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -183,8 +183,16 @@ def run_simulation(args: argparse.Namespace) -> SimulationCommandResult:
                 "not enough aligned power samples found for simulation window; "
                 "run `uv run hass-reader ingest` first"
             )
+        window = f"{format_influx_time(start_utc)}..{format_influx_time(end_utc)}"
+        print(f"phase=simulate window={window} progress=0% samples=0/{row_count}")
         result = simulate_scenarios(
-            _iter_aligned_power_rows(ingestion_db_path, start_utc, end_utc),
+            _iter_aligned_power_rows(
+                ingestion_db_path,
+                start_utc,
+                end_utc,
+                total=row_count,
+                progress=lambda done, total: _print_simulation_progress(window, done, total),
+            ),
             battery_capacities_kwh=args.battery_capacities_kwh,
             efficiency=args.efficiency,
         )
@@ -237,9 +245,13 @@ def _iter_aligned_power_rows(
     db_path: Path,
     start_utc: datetime,
     end_utc: datetime,
-) -> Sequence[AlignedPowerRow]:
+    *,
+    total: int,
+    progress: Callable[[int, int], None] | None = None,
+) -> Iterator[AlignedPowerRow]:
     with sqlite3.connect(db_path) as connection:
-        rows = connection.execute(
+        progress_step = max(1, total // 100)
+        cursor = connection.execute(
             """
             SELECT
                 timestamp_utc,
@@ -252,17 +264,25 @@ def _iter_aligned_power_rows(
             ORDER BY timestamp_utc
             """,
             (_format_utc_timestamp(start_utc), _format_utc_timestamp(end_utc)),
-        ).fetchall()
-    return [
-        AlignedPowerRow(
-            timestamp_utc=_parse_utc_timestamp(str(row[0])),
-            grid_import_kw=float(row[1]),
-            grid_export_kw=float(row[2]),
-            solar_production_kw=None if row[3] is None else float(row[3]),
-            gap_flags=str(row[4]),
         )
-        for row in rows
-    ]
+        for done, row in enumerate(cursor, start=1):
+            yield AlignedPowerRow(
+                timestamp_utc=_parse_utc_timestamp(str(row[0])),
+                grid_import_kw=float(row[1]),
+                grid_export_kw=float(row[2]),
+                solar_production_kw=None if row[3] is None else float(row[3]),
+                gap_flags=str(row[4]),
+            )
+            if progress is not None and (done % progress_step == 0 or done == total):
+                progress(done, total)
+
+
+def _print_simulation_progress(window: str, done: int, total: int) -> None:
+    if total == 0 or done >= total:
+        percent = 100
+    else:
+        percent = max(1, done * 100 // total)
+    print(f"phase=simulate window={window} progress={percent}% samples={done}/{total}")
 
 
 def _build_parser() -> argparse.ArgumentParser:

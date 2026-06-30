@@ -142,7 +142,11 @@ def test_simulate_command_reads_ingestion_cache_and_writes_simulation_db(tmp_pat
     )
 
     assert exit_code == 0
-    assert "simulation complete: run_id=1 scenarios=2" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "phase=simulate" in output
+    assert "progress=0% samples=0/3" in output
+    assert "progress=100% samples=3/3" in output
+    assert "simulation complete: run_id=1 scenarios=2" in output
     with sqlite3.connect(simulation_db) as connection:
         rows = connection.execute(
             """
