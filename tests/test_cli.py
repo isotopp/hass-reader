@@ -454,6 +454,8 @@ def test_soc_command_prints_daily_min_avg_max_summary(tmp_path, capsys) -> None:
     assert "0.50" in output
     assert "1.00" in output
     assert "empty,full" in output
+    assert "SoC chart (average)" in output
+    assert "1kWh     | #####....." in output
 
 
 def test_report_command_includes_metric_mapping_and_source_metadata(tmp_path, capsys) -> None:

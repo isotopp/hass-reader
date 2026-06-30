@@ -219,9 +219,16 @@ Acceptance criteria:
 - Empty/full behavior is visually obvious for small test fixtures.
 - Tests assert stable textual markers rather than brittle full chart art.
 
+Execution result:
+
+- Added a dependency-free ASCII average-SoC chart to the `hass-reader soc` terminal output.
+- The chart distinguishes selected battery scenarios and shows relative fill level per bucket.
+- Covered by stable markers in `tests/test_cli.py`.
+- Committed with the `SOC-005` implementation.
+
 ## SOC-006: Render Daily Min/Max/Average Summary
 
-Status: Not Started
+Status: Done
 
 Source story: Story 4, Daily Min/Max/Average Summary
 

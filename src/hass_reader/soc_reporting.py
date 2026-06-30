@@ -62,6 +62,8 @@ def format_soc_rollup_summary(report: SocRollupReport) -> str:
         "Date        Scenario  Min kWh  Avg kWh  Max kWh  Samples  State",
     ]
     lines.extend(_format_soc_rollup_row(row) for row in report.rows)
+    lines.extend(["", "SoC chart (average)"])
+    lines.extend(_format_soc_chart(report))
     return "\n".join(lines)
 
 
@@ -454,3 +456,27 @@ def _format_soc_rollup_row(row: SocRollupRow) -> str:
         f"{row.sample_count:>8}  "
         f"{state}"
     )
+
+
+def _format_soc_chart(report: SocRollupReport) -> list[str]:
+    rows_by_scenario: dict[str, list[SocRollupRow]] = {}
+    for row in report.rows:
+        rows_by_scenario.setdefault(row.scenario_name, []).append(row)
+
+    chart_lines = []
+    for scenario in report.scenarios:
+        rows = rows_by_scenario.get(scenario.name, [])
+        if not rows:
+            continue
+        bars = " ".join(_soc_bar(row.avg_soc_kwh, row.capacity_kwh) for row in rows)
+        first = rows[0].bucket_start_utc[:10]
+        last = rows[-1].bucket_start_utc[:10]
+        chart_lines.append(f"{scenario.name:<8} | {bars}  {first}..{last}")
+    return chart_lines
+
+
+def _soc_bar(value: float, capacity: float) -> str:
+    if capacity <= 0:
+        return ".........."
+    filled = round(max(0.0, min(1.0, value / capacity)) * 10)
+    return "#" * filled + "." * (10 - filled)
