@@ -12,6 +12,9 @@ This epic depends on `docs/influx-metrics.md` for the metric contract produced b
 Battery simulation should consume normalized samples from the metric ingestion epic. It should not
 query InfluxDB directly and should not duplicate metric discovery logic.
 
+Battery simulation should read simulation-ready inputs from `aligned_power_sample`, documented in
+`docs/metric-ingestion.md`.
+
 ## Stories
 
 ### Story 1: Simulate the Target Year

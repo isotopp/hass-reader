@@ -132,7 +132,7 @@ Seed these optional cross-check or validation sources as non-primary rows:
 
 ## ING-001: Create SQLite Cache Schema
 
-Status: Ready
+Status: Done
 
 Source stories: Story 1, Query Time-Series Samples; Story 4, Preserve Source Metadata
 
@@ -154,9 +154,15 @@ Acceptance criteria:
 - `var/` is ignored by git.
 - Tests create SQLite databases in temporary directories.
 
+Execution result:
+
+- Implemented in `src/hass_reader/cache.py`.
+- Covered by `tests/test_cache.py`.
+- Committed as `2ebd927 Add metric ingestion cache schema`.
+
 ## ING-002: Build Influx Query Client
 
-Status: Ready
+Status: Done
 
 Source story: Story 1, Query Time-Series Samples
 
@@ -178,9 +184,15 @@ Acceptance criteria:
 - Empty result sets produce a focused error naming measurement, entity ID, and time range.
 - Unit tests cover query construction without requiring a live InfluxDB.
 
+Execution result:
+
+- Implemented in `src/hass_reader/influx.py`.
+- Covered by `tests/test_influx.py`.
+- Committed as `f41f01b Add Influx query client`.
+
 ## ING-003: Avoid Duplicate Downloads with Fetch Windows
 
-Status: Ready
+Status: Done
 
 Source story: Story 1, Query Time-Series Samples
 
@@ -201,9 +213,15 @@ Acceptance criteria:
 - Failed fetch windows are recorded with an error message and do not block future retries.
 - Tests prove cache-hit and cache-miss behavior through the public ingestion interface.
 
+Execution result:
+
+- Implemented in `src/hass_reader/ingestion.py`.
+- Covered by `tests/test_ingestion.py`.
+- Committed as `d553e42 Cache raw Influx fetch windows`.
+
 ## ING-004: Normalize Units
 
-Status: Ready
+Status: Done
 
 Source story: Story 2, Normalize Units
 
@@ -224,9 +242,15 @@ Acceptance criteria:
 - Unknown units fail ingestion before aligned samples are written.
 - Errors include measurement, entity ID, original unit, and timestamp.
 
+Execution result:
+
+- Implemented in `src/hass_reader/ingestion.py`.
+- Covered by `tests/test_ingestion.py`.
+- Committed as `a3142f6 Normalize ingested metric samples`.
+
 ## ING-005: Align Primary Power Series
 
-Status: Ready
+Status: Done
 
 Source story: Story 3, Merge Import and Export Series
 
@@ -249,9 +273,15 @@ Acceptance criteria:
 - The maximum source age is recorded in seconds.
 - Tests cover exact matches, fill-forward within the gap, and gaps beyond the threshold.
 
+Execution result:
+
+- Implemented in `src/hass_reader/ingestion.py`.
+- Covered by `tests/test_ingestion.py`.
+- Committed as `89a4f38 Align primary power samples`.
+
 ## ING-006: Preserve Ingestion Metadata for Reporting
 
-Status: Ready
+Status: Done
 
 Source story: Story 4, Preserve Source Metadata
 
@@ -271,9 +301,15 @@ Acceptance criteria:
 - Reports can show the local date range and UTC query range.
 - Tests verify the metadata read model from a temporary SQLite database.
 
+Execution result:
+
+- Implemented in `src/hass_reader/ingestion.py`.
+- Covered by `tests/test_ingestion.py`.
+- Committed as `6fe7d6d Expose ingestion metadata summary`.
+
 ## ING-007: Add Metric Ingestion CLI Command
 
-Status: Ready
+Status: Done
 
 Source stories: Story 1, Query Time-Series Samples; Story 4, Preserve Source Metadata
 
@@ -295,9 +331,16 @@ Acceptance criteria:
 - The command reports cached/fetched sample counts per source.
 - Normal CLI failures do not print Python stack traces.
 
+Execution result:
+
+- Implemented in `src/hass_reader/cli.py` and wired through `hass_reader:main`.
+- Covered by `tests/test_cli.py`.
+- Verified with `uv run hass-reader` and `uv run hass-reader ingest --help`.
+- Committed as `dc6a5c0 Add metric ingestion CLI`.
+
 ## ING-008: Document the Metric Ingestion Cache
 
-Status: Ready
+Status: Done
 
 Source stories: Story 1 through Story 4
 
@@ -316,6 +359,12 @@ Acceptance criteria:
 - Battery simulation has a clear pointer to the aligned data it should consume.
 - CLI reporting has a clear pointer to the run metadata and metric mapping it should display.
 - The document links back to `docs/influx-access.md` and `docs/influx-metrics.md`.
+
+Execution result:
+
+- Completed in `docs/metric-ingestion.md`.
+- Linked from `README.md`.
+- Follow-up pointers added to battery simulation and CLI reporting user stories.
 
 ## Suggested Execution Order
 

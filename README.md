@@ -66,6 +66,7 @@ Detailed discovery documentation:
 
 - [InfluxDB access](docs/influx-access.md)
 - [InfluxDB metrics](docs/influx-metrics.md)
+- [Metric ingestion cache](docs/metric-ingestion.md)
 
 ## Discovered Metrics
 
