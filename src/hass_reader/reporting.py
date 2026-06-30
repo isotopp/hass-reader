@@ -97,16 +97,17 @@ class SourceMetadata:
 def format_human_summary(report: SimulationReport) -> str:
     lines = [
         f"Simulation run {report.run_id}",
-        f"Range: {report.query_start_utc}..{report.query_end_utc}",
-        _format_source_metadata(report.source_metadata),
-        _format_metric_mappings(report.source_metadata),
-        (
-            "Baseline: "
-            f"import={_format_kwh(report.baseline.imported_kwh)} "
-            f"export={_format_kwh(report.baseline.exported_kwh)}"
-        ),
+        "Range:",
+        f"  simulation: {report.query_start_utc}..{report.query_end_utc}",
+        "Source:",
+        *_format_source_metadata(report.source_metadata),
+        "Metric mapping:",
+        *_format_metric_mappings(report.source_metadata),
+        "",
+        "Scenario  Cap kWh  Import kWh  Export kWh  Avoid import  Avoid export",
+        _format_scenario_row(report.baseline),
     ]
-    lines.extend(_format_battery_summary(scenario) for scenario in report.battery_scenarios)
+    lines.extend(_format_scenario_row(scenario) for scenario in report.battery_scenarios)
     return "\n".join(lines)
 
 
@@ -258,18 +259,16 @@ def _with_avoided_energy(
     )
 
 
-def _format_battery_summary(scenario: ReportScenario) -> str:
+def _format_scenario_row(scenario: ReportScenario) -> str:
+    name = "Baseline" if scenario.is_baseline else scenario.name
     return (
-        f"{scenario.name}: "
-        f"import={_format_kwh(scenario.imported_kwh)} "
-        f"export={_format_kwh(scenario.exported_kwh)} "
-        f"avoided_import={_format_kwh(scenario.avoided_import_kwh)} "
-        f"avoided_export={_format_kwh(scenario.avoided_export_kwh)}"
+        f"{name:<8} "
+        f"{scenario.capacity_kwh:>7.2f} "
+        f"{scenario.imported_kwh:>11.2f} "
+        f"{scenario.exported_kwh:>11.2f} "
+        f"{scenario.avoided_import_kwh:>13.2f} "
+        f"{scenario.avoided_export_kwh:>13.2f}"
     )
-
-
-def _format_kwh(value: float) -> str:
-    return f"{value:.2f} kWh"
 
 
 def _csv_row(report: SimulationReport, scenario: ReportScenario) -> dict[str, str]:
@@ -364,27 +363,31 @@ def _load_source_metadata(ingestion_db_path: Path) -> SourceMetadata:
     )
 
 
-def _format_source_metadata(source_metadata: SourceMetadata) -> str:
+def _format_source_metadata(source_metadata: SourceMetadata) -> list[str]:
     if source_metadata.influx_url is None or source_metadata.influx_database is None:
-        return "Source: unavailable"
-    return (
-        f"Source: url={source_metadata.influx_url} "
-        f"database={source_metadata.influx_database} "
-        f"range={source_metadata.ingestion_query_start_utc}.."
-        f"{source_metadata.ingestion_query_end_utc}"
-    )
+        return ["  unavailable"]
+    return [
+        f"  url: {source_metadata.influx_url}",
+        f"  database: {source_metadata.influx_database}",
+        (
+            "  ingestion range: "
+            f"{source_metadata.ingestion_query_start_utc}.."
+            f"{source_metadata.ingestion_query_end_utc}"
+        ),
+    ]
 
 
-def _format_metric_mappings(source_metadata: SourceMetadata) -> str:
-    parts = []
+def _format_metric_mappings(source_metadata: SourceMetadata) -> list[str]:
+    lines = []
     for role in PRIMARY_MAPPING_ROLES:
         mapping = source_metadata.mappings.get(role)
+        label_role = role.removesuffix("_power").replace("_", " ")
         if mapping is None:
-            parts.append(f"{role}=unavailable")
+            lines.append(f"  {label_role}: unavailable")
             continue
         label = "default" if mapping.is_default else "non-default"
-        parts.append(f"{role}={mapping.entity_id} ({label})")
-    return "Metric mapping: " + ", ".join(parts)
+        lines.append(f"  {label_role}: {mapping.entity_id} ({label})")
+    return lines
 
 
 def _mapping_entity_id(source_metadata: SourceMetadata, role: str) -> str:

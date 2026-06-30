@@ -150,9 +150,10 @@ def test_simulate_command_reads_ingestion_cache_and_writes_simulation_db(tmp_pat
     assert "progress=0% samples=0/3" in output
     assert "progress=100% samples=3/3" in output
     assert "simulation complete: run_id=1 scenarios=2" in output
-    assert "Baseline: import=1.00 kWh export=1.00 kWh" in output
-    assert "1kWh: import=0.20 kWh export=0.00 kWh" in output
-    assert "avoided_import=0.80 kWh avoided_export=1.00 kWh" in output
+    assert "Scenario  Cap kWh  Import kWh  Export kWh  Avoid import  Avoid export" in output
+    assert "Baseline" in output
+    assert "1kWh" in output
+    assert "0.80" in output
     with sqlite3.connect(simulation_db) as connection:
         rows = connection.execute(
             """
@@ -187,11 +188,13 @@ def test_report_command_prints_compact_summary_for_latest_run(tmp_path, capsys) 
     assert exit_code == 0
     output = capsys.readouterr().out
     assert "Simulation run 1" in output
-    assert "Baseline: import=2.00 kWh export=2.00 kWh" in output
-    assert "1kWh: import=1.20 kWh export=1.00 kWh" in output
-    assert "avoided_import=0.80 kWh avoided_export=1.00 kWh" in output
-    assert "2kWh: import=0.40 kWh export=0.00 kWh" in output
-    assert "avoided_import=1.60 kWh avoided_export=2.00 kWh" in output
+    assert "Scenario  Cap kWh  Import kWh  Export kWh  Avoid import  Avoid export" in output
+    assert "Baseline" in output
+    assert "1kWh" in output
+    assert "2kWh" in output
+    assert "1.20" in output
+    assert "0.40" in output
+    assert "1.60" in output
 
 
 def test_report_command_can_select_run_id(tmp_path, capsys) -> None:
@@ -206,8 +209,8 @@ def test_report_command_can_select_run_id(tmp_path, capsys) -> None:
     assert exit_code == 0
     output = capsys.readouterr().out
     assert f"Simulation run {first_run_id}" in output
-    assert "1kWh:" in output
-    assert "2kWh:" not in output
+    assert "1kWh" in output
+    assert "2kWh" not in output
 
 
 def test_report_command_writes_csv_output(tmp_path) -> None:
@@ -330,13 +333,31 @@ def test_report_command_includes_metric_mapping_and_source_metadata(tmp_path, ca
 
     assert exit_code == 0
     output = capsys.readouterr().out
-    assert "Source: url=http://192.168.1.10:8086 database=hass" in output
-    assert "grid_import_power=power_consumed (default)" in output
-    assert "grid_export_power=power_produced (default)" in output
+    assert "Source:" in output
+    assert "url: http://192.168.1.10:8086" in output
+    assert "database: hass" in output
+    assert "Metric mapping:" in output
+    assert "grid import: power_consumed (default)" in output
+    assert "grid export: power_produced (default)" in output
     assert (
-        "solar_production_power=zonneplan_one_optimized_omvormer_last_measured_value (default)"
-        in output
+        "solar production: zonneplan_one_optimized_omvormer_last_measured_value (default)" in output
     )
+
+
+def test_report_command_keeps_terminal_lines_readable(tmp_path, capsys) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    ingestion_db = tmp_path / "ingestion.sqlite3"
+    _write_ingestion_metadata(ingestion_db)
+    _persist_reportable_run(
+        simulation_db,
+        battery_capacities_kwh=[5.0, 10.0, 30.0, 35.0],
+        ingestion_db=ingestion_db,
+    )
+
+    exit_code = main(["report", "--simulation-db", str(simulation_db)])
+
+    assert exit_code == 0
+    assert max(len(line) for line in capsys.readouterr().out.splitlines()) <= 100
 
 
 def test_report_csv_includes_metric_mapping_and_source_metadata(tmp_path) -> None:
