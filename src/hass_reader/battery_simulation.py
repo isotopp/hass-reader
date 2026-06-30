@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from collections.abc import Iterable
 
 
 @dataclass
@@ -21,6 +23,20 @@ class ScenarioStep:
     discharged_kwh: float
     losses_kwh: float
     soc_kwh: float
+
+
+@dataclass(frozen=True)
+class AlignedPowerRow:
+    timestamp_utc: datetime
+    grid_import_kw: float
+    grid_export_kw: float
+    solar_production_kw: float | None
+    gap_flags: str
+
+
+@dataclass(frozen=True)
+class SimulationResult:
+    scenarios: list[BaselineScenario | BatteryScenario]
 
 
 class BaselineScenario:
@@ -96,3 +112,31 @@ def _clamp_zero(value: float) -> float:
     if abs(value) < 1e-12:
         return 0.0
     return max(value, 0.0)
+
+
+def simulate_scenarios(
+    rows: Iterable[AlignedPowerRow],
+    *,
+    battery_capacities_kwh: list[float],
+    efficiency: float,
+) -> SimulationResult:
+    scenarios: list[BaselineScenario | BatteryScenario] = [BaselineScenario()]
+    scenarios.extend(
+        BatteryScenario(capacity_kwh=capacity, efficiency=efficiency)
+        for capacity in battery_capacities_kwh
+    )
+
+    previous: AlignedPowerRow | None = None
+    for current in rows:
+        if previous is not None:
+            duration_hours = (current.timestamp_utc - previous.timestamp_utc).total_seconds() / 3600
+            grid_import_kwh = previous.grid_import_kw * duration_hours
+            grid_export_kwh = previous.grid_export_kw * duration_hours
+            for scenario in scenarios:
+                scenario.apply_step(
+                    grid_import_kwh=grid_import_kwh,
+                    grid_export_kwh=grid_export_kwh,
+                )
+        previous = current
+
+    return SimulationResult(scenarios=scenarios)
