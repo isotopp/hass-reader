@@ -5,6 +5,8 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
+from hass_reader.battery_simulation import BaselineScenario, BatteryScenario, SimulationResult
+
 
 DEFAULT_SIMULATION_DB_PATH = Path("var/hass-reader-simulation.sqlite3")
 ENV_SIMULATION_DB_PATH = "HASS_READER_SIMULATION_DB"
@@ -30,6 +32,60 @@ def initialize_simulation_db(db_path: str | Path | None = None) -> Path:
         _record_schema_version(connection)
 
     return resolved_path
+
+
+def persist_simulation_result(
+    *,
+    db_path: str | Path | None = None,
+    ingestion_db_path: str | Path,
+    query_start_utc: datetime,
+    query_end_utc: datetime,
+    result: SimulationResult,
+) -> int:
+    resolved_path = initialize_simulation_db(db_path)
+    with sqlite3.connect(resolved_path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        run_id = _insert_simulation_run(
+            connection,
+            ingestion_db_path=ingestion_db_path,
+            query_start_utc=query_start_utc,
+            query_end_utc=query_end_utc,
+            status="running",
+            error_message=None,
+        )
+        for scenario in result.scenarios:
+            scenario_id = _insert_simulation_scenario(connection, run_id=run_id, scenario=scenario)
+            _insert_simulation_summary(connection, scenario_id=scenario_id, scenario=scenario)
+        _complete_simulation_run(connection, run_id=run_id, status="completed", error_message=None)
+        return run_id
+
+
+def persist_failed_simulation_run(
+    *,
+    db_path: str | Path | None = None,
+    ingestion_db_path: str | Path,
+    query_start_utc: datetime,
+    query_end_utc: datetime,
+    error_message: str,
+) -> int:
+    resolved_path = initialize_simulation_db(db_path)
+    with sqlite3.connect(resolved_path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        run_id = _insert_simulation_run(
+            connection,
+            ingestion_db_path=ingestion_db_path,
+            query_start_utc=query_start_utc,
+            query_end_utc=query_end_utc,
+            status="failed",
+            error_message=error_message,
+        )
+        _complete_simulation_run(
+            connection,
+            run_id=run_id,
+            status="failed",
+            error_message=error_message,
+        )
+        return run_id
 
 
 def _create_schema(connection: sqlite3.Connection) -> None:
@@ -94,3 +150,123 @@ def _record_schema_version(connection: sqlite3.Connection) -> None:
         """,
         (SCHEMA_VERSION, datetime.now(UTC).isoformat()),
     )
+
+
+def _insert_simulation_run(
+    connection: sqlite3.Connection,
+    *,
+    ingestion_db_path: str | Path,
+    query_start_utc: datetime,
+    query_end_utc: datetime,
+    status: str,
+    error_message: str | None,
+) -> int:
+    cursor = connection.execute(
+        """
+        INSERT INTO simulation_run (
+            started_at_utc,
+            ingestion_db_path,
+            query_start_utc,
+            query_end_utc,
+            status,
+            error_message
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            datetime.now(UTC).isoformat(),
+            str(ingestion_db_path),
+            _format_timestamp(query_start_utc),
+            _format_timestamp(query_end_utc),
+            status,
+            error_message,
+        ),
+    )
+    if cursor.lastrowid is None:
+        raise RuntimeError("SQLite did not return a simulation_run id")
+    return cursor.lastrowid
+
+
+def _complete_simulation_run(
+    connection: sqlite3.Connection,
+    *,
+    run_id: int,
+    status: str,
+    error_message: str | None,
+) -> None:
+    connection.execute(
+        """
+        UPDATE simulation_run
+        SET completed_at_utc = ?, status = ?, error_message = ?
+        WHERE id = ?
+        """,
+        (datetime.now(UTC).isoformat(), status, error_message, run_id),
+    )
+
+
+def _insert_simulation_scenario(
+    connection: sqlite3.Connection,
+    *,
+    run_id: int,
+    scenario: BaselineScenario | BatteryScenario,
+) -> int:
+    cursor = connection.execute(
+        """
+        INSERT INTO simulation_scenario (
+            simulation_run_id,
+            name,
+            capacity_kwh,
+            efficiency,
+            is_baseline
+        )
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            run_id,
+            scenario.name,
+            scenario.capacity_kwh,
+            scenario.efficiency,
+            int(scenario.is_baseline),
+        ),
+    )
+    if cursor.lastrowid is None:
+        raise RuntimeError("SQLite did not return a simulation_scenario id")
+    return cursor.lastrowid
+
+
+def _insert_simulation_summary(
+    connection: sqlite3.Connection,
+    *,
+    scenario_id: int,
+    scenario: BaselineScenario | BatteryScenario,
+) -> None:
+    summary = scenario.summary
+    connection.execute(
+        """
+        INSERT INTO simulation_summary (
+            scenario_id,
+            imported_kwh,
+            exported_kwh,
+            charged_kwh,
+            discharged_kwh,
+            losses_kwh,
+            ending_soc_kwh
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            scenario_id,
+            summary.imported_kwh,
+            summary.exported_kwh,
+            summary.charged_kwh,
+            summary.discharged_kwh,
+            summary.losses_kwh,
+            summary.ending_soc_kwh,
+        ),
+    )
+
+
+def _format_timestamp(value: datetime) -> str:
+    if value.tzinfo is None:
+        raise ValueError("simulation run timestamps must be timezone-aware")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")

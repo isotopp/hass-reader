@@ -1,7 +1,14 @@
 import sqlite3
+from datetime import UTC, datetime
 
+from hass_reader.battery_simulation import AlignedPowerRow, simulate_scenarios
 from hass_reader.cache import initialize_cache
-from hass_reader.simulation_db import initialize_simulation_db, resolve_simulation_db_path
+from hass_reader.simulation_db import (
+    initialize_simulation_db,
+    persist_failed_simulation_run,
+    persist_simulation_result,
+    resolve_simulation_db_path,
+)
 
 
 def test_initialize_simulation_db_creates_schema(tmp_path) -> None:
@@ -55,3 +62,104 @@ def test_simulation_database_is_separate_from_ingestion_cache(tmp_path) -> None:
     assert ingestion_db.exists()
     assert simulation_db.exists()
     assert ingestion_db != simulation_db
+
+
+def test_persist_simulation_result_writes_run_scenarios_and_summaries(tmp_path) -> None:
+    ingestion_db = tmp_path / "ingestion.sqlite3"
+    simulation_db = tmp_path / "simulation.sqlite3"
+    initialize_cache(ingestion_db)
+    result = simulate_scenarios(
+        [
+            AlignedPowerRow(datetime(2025, 7, 1, 0, 0, tzinfo=UTC), 0.0, 2.0, 2.0, ""),
+            AlignedPowerRow(datetime(2025, 7, 1, 1, 0, tzinfo=UTC), 2.0, 0.0, 0.0, ""),
+            AlignedPowerRow(datetime(2025, 7, 1, 2, 0, tzinfo=UTC), 0.0, 0.0, 0.0, ""),
+        ],
+        battery_capacities_kwh=[1.0],
+        efficiency=0.8,
+    )
+
+    run_id = persist_simulation_result(
+        db_path=simulation_db,
+        ingestion_db_path=ingestion_db,
+        query_start_utc=datetime(2025, 6, 30, 22, 0, tzinfo=UTC),
+        query_end_utc=datetime(2026, 6, 30, 22, 0, tzinfo=UTC),
+        result=result,
+    )
+
+    with sqlite3.connect(simulation_db) as connection:
+        run = connection.execute(
+            """
+            SELECT ingestion_db_path, query_start_utc, query_end_utc, status, error_message
+            FROM simulation_run
+            WHERE id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+        scenarios = connection.execute(
+            """
+            SELECT name, capacity_kwh, efficiency, is_baseline
+            FROM simulation_scenario
+            WHERE simulation_run_id = ?
+            ORDER BY id
+            """,
+            (run_id,),
+        ).fetchall()
+        summaries = connection.execute(
+            """
+            SELECT
+                simulation_scenario.name,
+                simulation_summary.imported_kwh,
+                simulation_summary.exported_kwh,
+                simulation_summary.charged_kwh,
+                simulation_summary.discharged_kwh,
+                simulation_summary.losses_kwh,
+                simulation_summary.ending_soc_kwh
+            FROM simulation_summary
+            JOIN simulation_scenario ON simulation_scenario.id = simulation_summary.scenario_id
+            WHERE simulation_scenario.simulation_run_id = ?
+            ORDER BY simulation_scenario.id
+            """,
+            (run_id,),
+        ).fetchall()
+
+    assert run == (
+        str(ingestion_db),
+        "2025-06-30T22:00:00Z",
+        "2026-06-30T22:00:00Z",
+        "completed",
+        None,
+    )
+    assert scenarios == [
+        ("baseline", 0.0, 1.0, 1),
+        ("1kWh", 1.0, 0.8, 0),
+    ]
+    assert summaries == [
+        ("baseline", 2.0, 2.0, 0.0, 0.0, 0.0, 0.0),
+        ("1kWh", 1.2, 1.0, 1.0, 1.0, 0.19999999999999996, 0.0),
+    ]
+
+    with sqlite3.connect(ingestion_db) as connection:
+        simulation_tables = connection.execute(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'simulation_run'"
+        ).fetchone()[0]
+    assert simulation_tables == 0
+
+
+def test_persist_failed_simulation_run_records_error(tmp_path) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+
+    run_id = persist_failed_simulation_run(
+        db_path=simulation_db,
+        ingestion_db_path=tmp_path / "ingestion.sqlite3",
+        query_start_utc=datetime(2025, 6, 30, 22, 0, tzinfo=UTC),
+        query_end_utc=datetime(2026, 6, 30, 22, 0, tzinfo=UTC),
+        error_message="aligned data missing",
+    )
+
+    with sqlite3.connect(simulation_db) as connection:
+        row = connection.execute(
+            "SELECT status, error_message FROM simulation_run WHERE id = ?",
+            (run_id,),
+        ).fetchone()
+
+    assert row == ("failed", "aligned data missing")
