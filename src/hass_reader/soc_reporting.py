@@ -34,6 +34,28 @@ class SocRollupGenerationResult:
     rollups_written: int
 
 
+@dataclass(frozen=True)
+class SocRollupRow:
+    scenario_name: str
+    capacity_kwh: float
+    efficiency: float
+    bucket_kind: str
+    bucket_start_utc: str
+    bucket_end_utc: str
+    min_soc_kwh: float
+    avg_soc_kwh: float
+    max_soc_kwh: float
+    sample_count: int
+
+
+@dataclass(frozen=True)
+class SocRollupReport:
+    run_id: int
+    bucket_kind: str
+    scenarios: list[SocScenario]
+    rows: list[SocRollupRow]
+
+
 def check_soc_step_availability(
     db_path: str | Path,
     *,
@@ -99,6 +121,49 @@ def generate_soc_rollups(
         run_id=availability.run_id,
         bucket_kind=bucket_kind,
         rollups_written=rollups_written,
+    )
+
+
+def load_soc_rollups(
+    db_path: str | Path,
+    *,
+    bucket_kind: str,
+    run_id: int | None = None,
+    selectors: list[str] | None = None,
+    start_utc: datetime | None = None,
+    end_utc: datetime | None = None,
+) -> SocRollupReport:
+    if bucket_kind not in {"hour", "day"}:
+        raise SocReportingError("invalid bucket_kind: expected one of hour, day")
+    resolved_path = Path(db_path)
+    if not resolved_path.exists():
+        raise SocReportingError(f"simulation database not found: {resolved_path}")
+
+    with sqlite3.connect(resolved_path) as connection:
+        selected_run_id = _resolve_run_id(connection, run_id=run_id)
+        scenarios = _resolve_scenarios(
+            connection,
+            run_id=selected_run_id,
+            selectors=selectors or [],
+        )
+        rows = _load_rollup_rows(
+            connection,
+            run_id=selected_run_id,
+            scenarios=scenarios,
+            bucket_kind=bucket_kind,
+            start_utc=start_utc,
+            end_utc=end_utc,
+        )
+
+    if not rows:
+        raise SocReportingError(
+            "no SoC rollups found; run `uv run hass-reader soc-rollup` for this run first"
+        )
+    return SocRollupReport(
+        run_id=selected_run_id,
+        bucket_kind=bucket_kind,
+        scenarios=scenarios,
+        rows=rows,
     )
 
 
@@ -279,6 +344,65 @@ def _replace_rollups(
             for bucket in buckets
         ],
     )
+
+
+def _load_rollup_rows(
+    connection: sqlite3.Connection,
+    *,
+    run_id: int,
+    scenarios: list[SocScenario],
+    bucket_kind: str,
+    start_utc: datetime | None,
+    end_utc: datetime | None,
+) -> list[SocRollupRow]:
+    scenario_ids = {scenario.id for scenario in scenarios}
+    scenario_by_id = {scenario.id: scenario for scenario in scenarios}
+    filters = ["simulation_run_id = ?", "bucket_kind = ?"]
+    parameters: list[object] = [run_id, bucket_kind]
+    if start_utc is not None:
+        filters.append("bucket_start_utc >= ?")
+        parameters.append(_format_timestamp(start_utc))
+    if end_utc is not None:
+        filters.append("bucket_start_utc < ?")
+        parameters.append(_format_timestamp(end_utc))
+    rows = connection.execute(
+        f"""
+        SELECT
+            simulation_scenario_id,
+            bucket_kind,
+            bucket_start_utc,
+            bucket_end_utc,
+            min_soc_kwh,
+            avg_soc_kwh,
+            max_soc_kwh,
+            sample_count
+        FROM simulation_soc_rollup
+        WHERE {" AND ".join(filters)}
+        ORDER BY bucket_start_utc, simulation_scenario_id
+        """,
+        parameters,
+    ).fetchall()
+    result = []
+    for row in rows:
+        scenario_id = int(row[0])
+        if scenario_id not in scenario_ids:
+            continue
+        scenario = scenario_by_id[scenario_id]
+        result.append(
+            SocRollupRow(
+                scenario_name=scenario.name,
+                capacity_kwh=scenario.capacity_kwh,
+                efficiency=scenario.efficiency,
+                bucket_kind=str(row[1]),
+                bucket_start_utc=str(row[2]),
+                bucket_end_utc=str(row[3]),
+                min_soc_kwh=float(row[4]),
+                avg_soc_kwh=float(row[5]),
+                max_soc_kwh=float(row[6]),
+                sample_count=int(row[7]),
+            )
+        )
+    return result
 
 
 def _bucket_bounds(

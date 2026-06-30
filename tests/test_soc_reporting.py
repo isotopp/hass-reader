@@ -9,6 +9,7 @@ from hass_reader.soc_reporting import (
     SocReportingError,
     check_soc_step_availability,
     generate_soc_rollups,
+    load_soc_rollups,
 )
 
 
@@ -81,6 +82,66 @@ def test_generate_soc_rollups_is_idempotent(tmp_path) -> None:
     generate_soc_rollups(simulation_db, run_id=run_id, bucket_kind="hour")
 
     assert len(_read_rollups(simulation_db)) == 2
+
+
+def test_load_soc_rollups_filters_selected_batteries_and_half_open_interval(tmp_path) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    run_id = _persist_run_with_subhour_steps(simulation_db)
+    generate_soc_rollups(simulation_db, run_id=run_id, bucket_kind="hour")
+
+    report = load_soc_rollups(
+        simulation_db,
+        run_id=run_id,
+        selectors=["1kWh"],
+        bucket_kind="hour",
+        start_utc=datetime(2025, 7, 1, 0, 0, tzinfo=UTC),
+        end_utc=datetime(2025, 7, 1, 1, 0, tzinfo=UTC),
+    )
+
+    assert report.run_id == run_id
+    assert [scenario.name for scenario in report.scenarios] == ["1kWh"]
+    assert [
+        (
+            row.scenario_name,
+            row.bucket_start_utc,
+            row.bucket_end_utc,
+            row.min_soc_kwh,
+            row.avg_soc_kwh,
+            row.max_soc_kwh,
+            row.sample_count,
+        )
+        for row in report.rows
+    ] == [
+        (
+            "1kWh",
+            "2025-07-01T00:00:00Z",
+            "2025-07-01T01:00:00Z",
+            0.1875,
+            0.34375,
+            0.5,
+            2,
+        )
+    ]
+
+
+def test_load_soc_rollups_does_not_require_raw_steps_after_generation(tmp_path) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    run_id = _persist_run_with_subhour_steps(simulation_db)
+    generate_soc_rollups(simulation_db, run_id=run_id, bucket_kind="hour")
+    with sqlite3.connect(simulation_db) as connection:
+        connection.execute("DELETE FROM simulation_step")
+
+    report = load_soc_rollups(simulation_db, run_id=run_id, bucket_kind="hour")
+
+    assert len(report.rows) == 2
+
+
+def test_load_soc_rollups_reports_missing_rollups(tmp_path) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    run_id = _persist_run_with_subhour_steps(simulation_db)
+
+    with pytest.raises(SocReportingError, match="soc-rollup"):
+        load_soc_rollups(simulation_db, run_id=run_id, bucket_kind="hour")
 
 
 def _persist_run(

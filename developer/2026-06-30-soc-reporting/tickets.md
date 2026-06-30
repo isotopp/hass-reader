@@ -163,7 +163,7 @@ Execution result:
 
 ## SOC-004: Read SoC Rollups for Selected Intervals
 
-Status: Not Started
+Status: Done
 
 Source stories: Story 1, Select Run, Battery Sizes, and Interval; Story 2, Build Efficient SoC
 Rollups
@@ -184,6 +184,16 @@ Acceptance criteria:
 - Tests prove interval filtering is half-open.
 - Missing rollup rows fail with a clear instruction to run rollup generation.
 - The raw `simulation_step` table is not queried by the read path when rollups exist.
+
+Execution result:
+
+- Added `load_soc_rollups` read model for selected run, scenarios, bucket kind, and half-open
+  intervals.
+- The read path uses `simulation_soc_rollup` and does not require raw `simulation_step` rows after
+  rollup generation.
+- Missing rollups fail with guidance to run `soc-rollup`.
+- Covered by `tests/test_soc_reporting.py`.
+- Committed with the `SOC-004` implementation.
 
 ## SOC-005: Render Terminal SoC Charts
 
