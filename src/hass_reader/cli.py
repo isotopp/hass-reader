@@ -29,6 +29,7 @@ from hass_reader.simulation_db import (
     persist_simulation_result,
     resolve_simulation_db_path,
 )
+from hass_reader.soc_reporting import check_soc_step_availability
 
 
 DEFAULT_MAX_GAP_SECONDS = 900
@@ -129,8 +130,18 @@ def main(
         if validation_error is not None:
             print(f"error: {validation_error}", file=sys.stderr)
             return 2
-        print("error: soc reporting is not implemented yet", file=sys.stderr)
-        return 1
+        try:
+            availability = check_soc_step_availability(
+                args.simulation_db,
+                run_id=args.run_id,
+                selectors=args.battery_selectors,
+            )
+        except Exception as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        scenario_names = ",".join(scenario.name for scenario in availability.scenarios)
+        print(f"soc step data available: run_id={availability.run_id} scenarios={scenario_names}")
+        return 0
     parser.print_help()
     return 0
 

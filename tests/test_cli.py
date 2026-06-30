@@ -379,15 +379,18 @@ def test_soc_command_rejects_invalid_date_range_before_opening_database(tmp_path
 
 
 def test_soc_command_accepts_valid_inputs_until_read_model_exists(tmp_path, capsys) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    _persist_reportable_run(simulation_db, battery_capacities_kwh=[1.0], persist_steps=True)
+
     exit_code = main(
         [
             "soc",
             "--simulation-db",
-            str(tmp_path / "missing.sqlite3"),
+            str(simulation_db),
             "--run-id",
-            "2",
+            "1",
             "--batteries",
-            "10,30kWh,35",
+            "1",
             "--start",
             "2026-01-01",
             "--end",
@@ -400,8 +403,20 @@ def test_soc_command_accepts_valid_inputs_until_read_model_exists(tmp_path, caps
     )
 
     captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "soc step data available: run_id=1 scenarios=1kWh" in captured.out
+    assert "Traceback" not in captured.err
+
+
+def test_soc_command_reports_missing_step_data(tmp_path, capsys) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    _persist_reportable_run(simulation_db, battery_capacities_kwh=[1.0], persist_steps=False)
+
+    exit_code = main(["soc", "--simulation-db", str(simulation_db), "--batteries", "1"])
+
+    captured = capsys.readouterr()
     assert exit_code == 1
-    assert "soc reporting is not implemented yet" in captured.err
+    assert "simulate --store-steps" in captured.err
     assert "Traceback" not in captured.err
 
 
@@ -599,6 +614,7 @@ def _persist_reportable_run(
     *,
     battery_capacities_kwh: list[float],
     ingestion_db: Path | None = None,
+    persist_steps: bool = False,
 ) -> int:
     result = simulate_scenarios(
         [
@@ -615,4 +631,5 @@ def _persist_reportable_run(
         query_start_utc=datetime(2025, 6, 30, 22, 0, tzinfo=UTC),
         query_end_utc=datetime(2026, 6, 30, 22, 0, tzinfo=UTC),
         result=result,
+        persist_steps=persist_steps,
     )

@@ -101,7 +101,7 @@ Execution result:
 
 ## SOC-002: Detect Step Availability for a Simulation Run
 
-Status: Not Started
+Status: Done
 
 Source story: Story 5, Step Storage Guidance
 
@@ -120,6 +120,15 @@ Acceptance criteria:
 - The error says `simulate --store-steps` is required for raw SoC reporting.
 - A run with step data passes the availability check.
 - Tests create small temporary simulation databases.
+
+Execution result:
+
+- Added `src/hass_reader/soc_reporting.py` with run/scenario resolution and step availability
+  checks.
+- `hass-reader soc` now reports available step data for selected scenarios.
+- Summary-only runs fail with guidance to rerun simulation using `--store-steps`.
+- Covered by `tests/test_soc_reporting.py` and `tests/test_cli.py`.
+- Committed with the `SOC-002` implementation.
 
 ## SOC-003: Build Hourly and Daily SoC Rollups
 
