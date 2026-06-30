@@ -293,10 +293,7 @@ def test_align_primary_power_flags_values_beyond_gap(tmp_path) -> None:
 
 def test_align_primary_power_reports_bounded_progress_checkpoints(tmp_path) -> None:
     db_path = tmp_path / "cache.sqlite3"
-    timestamps = [
-        datetime(2025, 7, 1, 0, index, tzinfo=UTC)
-        for index in range(3)
-    ]
+    timestamps = [datetime(2025, 7, 1, 0, index, tzinfo=UTC) for index in range(3)]
     _ingest_and_normalize(
         db_path,
         "grid_import_power",

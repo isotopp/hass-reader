@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from collections.abc import Iterable
 
 
 @dataclass
@@ -37,6 +37,11 @@ class AlignedPowerRow:
 @dataclass(frozen=True)
 class SimulationResult:
     scenarios: list[BaselineScenario | BatteryScenario]
+    skipped_intervals: list[dict[str, str]]
+
+
+class SimulationInputError(ValueError):
+    pass
 
 
 class BaselineScenario:
@@ -119,6 +124,7 @@ def simulate_scenarios(
     *,
     battery_capacities_kwh: list[float],
     efficiency: float,
+    skip_gap_intervals: bool = True,
 ) -> SimulationResult:
     scenarios: list[BaselineScenario | BatteryScenario] = [BaselineScenario()]
     scenarios.extend(
@@ -127,9 +133,25 @@ def simulate_scenarios(
     )
 
     previous: AlignedPowerRow | None = None
+    skipped_intervals: list[dict[str, str]] = []
     for current in rows:
         if previous is not None:
             duration_hours = (current.timestamp_utc - previous.timestamp_utc).total_seconds() / 3600
+            if duration_hours <= 0:
+                raise SimulationInputError(
+                    "aligned_power_sample rows have non-increasing timestamps: "
+                    f"{previous.timestamp_utc.isoformat()} then {current.timestamp_utc.isoformat()}"
+                )
+            if previous.gap_flags and skip_gap_intervals:
+                skipped_intervals.append(
+                    {
+                        "start_utc": _format_timestamp(previous.timestamp_utc),
+                        "end_utc": _format_timestamp(current.timestamp_utc),
+                        "reason": previous.gap_flags,
+                    }
+                )
+                previous = current
+                continue
             grid_import_kwh = previous.grid_import_kw * duration_hours
             grid_export_kwh = previous.grid_export_kw * duration_hours
             for scenario in scenarios:
@@ -139,4 +161,8 @@ def simulate_scenarios(
                 )
         previous = current
 
-    return SimulationResult(scenarios=scenarios)
+    return SimulationResult(scenarios=scenarios, skipped_intervals=skipped_intervals)
+
+
+def _format_timestamp(value: datetime) -> str:
+    return value.isoformat().replace("+00:00", "Z")

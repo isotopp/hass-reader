@@ -6,6 +6,7 @@ from hass_reader.battery_simulation import (
     AlignedPowerRow,
     BaselineScenario,
     BatteryScenario,
+    SimulationInputError,
     simulate_scenarios,
 )
 
@@ -132,3 +133,81 @@ def test_simulate_scenarios_reads_source_rows_once() -> None:
 
     assert read_count == 3
     assert len(result.scenarios) == 3
+
+
+def test_simulate_scenarios_uses_irregular_intervals() -> None:
+    rows = [
+        AlignedPowerRow(
+            timestamp_utc=datetime(2025, 7, 1, 0, 0, tzinfo=UTC),
+            grid_import_kw=2.0,
+            grid_export_kw=0.0,
+            solar_production_kw=0.0,
+            gap_flags="",
+        ),
+        AlignedPowerRow(
+            timestamp_utc=datetime(2025, 7, 1, 0, 30, tzinfo=UTC),
+            grid_import_kw=4.0,
+            grid_export_kw=0.0,
+            solar_production_kw=0.0,
+            gap_flags="",
+        ),
+        AlignedPowerRow(
+            timestamp_utc=datetime(2025, 7, 1, 2, 0, tzinfo=UTC),
+            grid_import_kw=0.0,
+            grid_export_kw=0.0,
+            solar_production_kw=0.0,
+            gap_flags="",
+        ),
+    ]
+
+    result = simulate_scenarios(rows, battery_capacities_kwh=[], efficiency=0.9)
+
+    assert result.scenarios[0].summary.imported_kwh == 7.0
+
+
+def test_simulate_scenarios_rejects_duplicate_timestamps() -> None:
+    timestamp = datetime(2025, 7, 1, 0, 0, tzinfo=UTC)
+    rows = [
+        AlignedPowerRow(timestamp, 1.0, 0.0, 0.0, ""),
+        AlignedPowerRow(timestamp, 1.0, 0.0, 0.0, ""),
+    ]
+
+    with pytest.raises(SimulationInputError, match="non-increasing timestamps"):
+        simulate_scenarios(rows, battery_capacities_kwh=[], efficiency=0.9)
+
+
+def test_simulate_scenarios_skips_intervals_starting_from_gap_rows() -> None:
+    rows = [
+        AlignedPowerRow(
+            timestamp_utc=datetime(2025, 7, 1, 0, 0, tzinfo=UTC),
+            grid_import_kw=10.0,
+            grid_export_kw=0.0,
+            solar_production_kw=0.0,
+            gap_flags="import_gap",
+        ),
+        AlignedPowerRow(
+            timestamp_utc=datetime(2025, 7, 1, 1, 0, tzinfo=UTC),
+            grid_import_kw=1.0,
+            grid_export_kw=0.0,
+            solar_production_kw=0.0,
+            gap_flags="",
+        ),
+        AlignedPowerRow(
+            timestamp_utc=datetime(2025, 7, 1, 2, 0, tzinfo=UTC),
+            grid_import_kw=0.0,
+            grid_export_kw=0.0,
+            solar_production_kw=0.0,
+            gap_flags="",
+        ),
+    ]
+
+    result = simulate_scenarios(rows, battery_capacities_kwh=[], efficiency=0.9)
+
+    assert result.scenarios[0].summary.imported_kwh == 1.0
+    assert result.skipped_intervals == [
+        {
+            "start_utc": "2025-07-01T00:00:00Z",
+            "end_utc": "2025-07-01T01:00:00Z",
+            "reason": "import_gap",
+        }
+    ]
