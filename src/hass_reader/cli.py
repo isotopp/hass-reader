@@ -19,6 +19,7 @@ from hass_reader.influx import (
     default_query_range,
 )
 from hass_reader.ingestion import align_primary_power, ingest_raw_metric, normalize_metric
+from hass_reader.simulation_db import DEFAULT_SIMULATION_DB_PATH
 
 
 DEFAULT_MAX_GAP_SECONDS = 900
@@ -30,6 +31,12 @@ class IngestCommandResult:
     cached: int
     normalized: int
     aligned: int
+
+
+@dataclass(frozen=True)
+class SimulationCommandResult:
+    run_id: int
+    scenario_count: int
 
 
 class InfluxRawMetricIngestor:
@@ -51,15 +58,20 @@ class InfluxRawMetricIngestor:
 
 
 IngestRunner = Callable[[argparse.Namespace], IngestCommandResult]
+SimulationRunner = Callable[[argparse.Namespace], SimulationCommandResult]
 
 
 def main(
     argv: Sequence[str] | None = None,
     *,
     ingest_runner: IngestRunner | None = None,
+    simulation_runner: SimulationRunner | None = None,
 ) -> int:
     parser = _build_parser()
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as error:
+        return _exit_code(error.code)
     if args.command == "ingest":
         runner = ingest_runner or run_ingest
         try:
@@ -72,6 +84,19 @@ def main(
             f"fetched={result.fetched} cached={result.cached} "
             f"normalized={result.normalized} aligned={result.aligned}"
         )
+        return 0
+    if args.command == "simulate":
+        validation_error = _validate_simulation_args(args)
+        if validation_error is not None:
+            print(f"error: {validation_error}", file=sys.stderr)
+            return 2
+        runner = simulation_runner or run_simulation
+        try:
+            result = runner(args)
+        except Exception as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        print(f"simulation complete: run_id={result.run_id} scenarios={result.scenario_count}")
         return 0
     parser.print_help()
     return 0
@@ -116,6 +141,10 @@ def run_ingest(args: argparse.Namespace) -> IngestCommandResult:
     )
 
 
+def run_simulation(_args: argparse.Namespace) -> SimulationCommandResult:
+    raise NotImplementedError("simulation execution is not implemented yet")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     default_range = default_query_range()
     parser = argparse.ArgumentParser(prog="hass-reader")
@@ -129,6 +158,14 @@ def _build_parser() -> argparse.ArgumentParser:
     ingest.add_argument("--influx-database", default=DEFAULT_INFLUX_DATABASE)
     ingest.add_argument("--max-gap-seconds", type=int, default=DEFAULT_MAX_GAP_SECONDS)
     ingest.add_argument("--force-refresh", action="store_true")
+    simulate = subparsers.add_parser("simulate")
+    simulate.add_argument("--batteries", required=True)
+    simulate.add_argument("--efficiency", type=float, default=0.9)
+    simulate.add_argument("--ingestion-db", type=Path, default=None)
+    simulate.add_argument("--simulation-db", type=Path, default=DEFAULT_SIMULATION_DB_PATH)
+    simulate.add_argument("--start", default=_format_local_date(default_range.start_utc))
+    simulate.add_argument("--end", default=_format_local_date(default_range.end_utc))
+    simulate.add_argument("--timezone", default=DEFAULT_LOCAL_TIMEZONE)
     return parser
 
 
@@ -150,3 +187,37 @@ def _parse_local_boundary(value: str, timezone_name: str) -> datetime:
         parsed_date.day,
         tzinfo=timezone,
     ).astimezone(UTC)
+
+
+def _validate_simulation_args(args: argparse.Namespace) -> str | None:
+    capacities = _parse_battery_capacities(args.batteries)
+    if not capacities:
+        return "invalid --batteries: provide one or more positive decimal capacities"
+    if not 0 < args.efficiency <= 1:
+        return "invalid --efficiency: expected a decimal where 0 < efficiency <= 1"
+    args.battery_capacities_kwh = capacities
+    return None
+
+
+def _parse_battery_capacities(value: str) -> list[float]:
+    capacities: list[float] = []
+    for part in value.split(","):
+        stripped = part.strip()
+        if not stripped:
+            return []
+        try:
+            capacity = float(stripped)
+        except ValueError:
+            return []
+        if capacity <= 0:
+            return []
+        capacities.append(capacity)
+    return capacities
+
+
+def _exit_code(value: object) -> int:
+    if isinstance(value, int):
+        return value
+    if value is None:
+        return 0
+    return 1
