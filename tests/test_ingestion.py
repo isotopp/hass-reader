@@ -4,7 +4,12 @@ import pytest
 
 from hass_reader.cache import initialize_cache
 from hass_reader.influx import InfluxSample
-from hass_reader.ingestion import RawMetricIngestor, ingest_raw_metric
+from hass_reader.ingestion import (
+    RawMetricIngestor,
+    UnitNormalizationError,
+    ingest_raw_metric,
+    normalize_metric,
+)
 
 
 class RecordingIngestor(RawMetricIngestor):
@@ -130,3 +135,96 @@ def test_failed_fetch_window_does_not_block_retry(tmp_path) -> None:
     assert retry.fetched is True
     assert retry.sample_count == 1
     assert ingestor.calls == 2
+
+
+def test_normalize_metric_converts_watts_to_kw(tmp_path) -> None:
+    db_path = tmp_path / "cache.sqlite3"
+    initialize_cache(db_path)
+    ingestor = RecordingIngestor(
+        [
+            InfluxSample(
+                timestamp_utc=datetime(2025, 7, 1, 0, 0, tzinfo=UTC),
+                value=1250.0,
+                unit="W",
+                friendly_name="Solar",
+                source="hass",
+                state_class="measurement",
+            )
+        ]
+    )
+    ingest_raw_metric(
+        db_path=db_path,
+        role="solar_production_power",
+        ingestor=ingestor,
+        start_utc=datetime(2025, 6, 30, 22, 0, tzinfo=UTC),
+        end_utc=datetime(2026, 6, 30, 22, 0, tzinfo=UTC),
+    )
+
+    result = normalize_metric(db_path=db_path, role="solar_production_power")
+
+    assert result.normalized_count == 1
+    assert result.unit == "kW"
+    assert result.values == [1.25]
+
+
+def test_normalize_metric_passes_kwh_through(tmp_path) -> None:
+    db_path = tmp_path / "cache.sqlite3"
+    initialize_cache(db_path)
+    ingestor = RecordingIngestor(
+        [
+            InfluxSample(
+                timestamp_utc=datetime(2025, 7, 1, 0, 0, tzinfo=UTC),
+                value=2.5,
+                unit="kWh",
+                friendly_name="Energy Consumed Today",
+                source="hass",
+                state_class="total_increasing",
+            )
+        ]
+    )
+    ingest_raw_metric(
+        db_path=db_path,
+        role="p1_grid_import_today",
+        ingestor=ingestor,
+        start_utc=datetime(2025, 6, 30, 22, 0, tzinfo=UTC),
+        end_utc=datetime(2026, 6, 30, 22, 0, tzinfo=UTC),
+    )
+
+    result = normalize_metric(db_path=db_path, role="p1_grid_import_today")
+
+    assert result.normalized_count == 1
+    assert result.unit == "kWh"
+    assert result.values == [2.5]
+
+
+def test_normalize_metric_rejects_unknown_units_with_context(tmp_path) -> None:
+    db_path = tmp_path / "cache.sqlite3"
+    initialize_cache(db_path)
+    ingestor = RecordingIngestor(
+        [
+            InfluxSample(
+                timestamp_utc=datetime(2025, 7, 1, 0, 0, tzinfo=UTC),
+                value=42.0,
+                unit="banana",
+                friendly_name="Power Consumed",
+                source="hass",
+                state_class="measurement",
+            )
+        ]
+    )
+    ingest_raw_metric(
+        db_path=db_path,
+        role="grid_import_power",
+        ingestor=ingestor,
+        start_utc=datetime(2025, 6, 30, 22, 0, tzinfo=UTC),
+        end_utc=datetime(2026, 6, 30, 22, 0, tzinfo=UTC),
+    )
+
+    with pytest.raises(UnitNormalizationError) as error:
+        normalize_metric(db_path=db_path, role="grid_import_power")
+
+    message = str(error.value)
+    assert "sensor__power" in message
+    assert "power_consumed" in message
+    assert "banana" in message
+    assert "2025-07-01T00:00:00Z" in message

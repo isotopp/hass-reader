@@ -36,11 +36,24 @@ class RawIngestionResult:
 
 
 @dataclass(frozen=True)
+class NormalizationResult:
+    role: str
+    normalized_count: int
+    unit: str
+    values: list[float]
+
+
+@dataclass(frozen=True)
 class MetricSourceRow:
     id: int
     role: str
     measurement: str
     entity_id: str
+    normalize_to_unit: str
+
+
+class UnitNormalizationError(ValueError):
+    pass
 
 
 def ingest_raw_metric(
@@ -136,7 +149,7 @@ def ingest_raw_metric(
 def _load_metric_source(connection: sqlite3.Connection, role: str) -> MetricSourceRow:
     row = connection.execute(
         """
-        SELECT id, role, measurement, entity_id
+        SELECT id, role, measurement, entity_id, normalize_to_unit
         FROM metric_source
         WHERE role = ?
         """,
@@ -149,6 +162,7 @@ def _load_metric_source(connection: sqlite3.Connection, role: str) -> MetricSour
         role=str(row[1]),
         measurement=str(row[2]),
         entity_id=str(row[3]),
+        normalize_to_unit=str(row[4]),
     )
 
 
@@ -337,6 +351,71 @@ def _record_fetch_window(
     )
 
 
+def normalize_metric(*, db_path: str | Path | None = None, role: str) -> NormalizationResult:
+    resolved_path = initialize_cache(resolve_cache_path(db_path))
+    with sqlite3.connect(resolved_path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        metric_source = _load_metric_source(connection, role)
+        rows = connection.execute(
+            """
+            SELECT timestamp_utc, value, unit, ingestion_run_id
+            FROM raw_sample
+            WHERE metric_source_id = ?
+            ORDER BY timestamp_utc
+            """,
+            (metric_source.id,),
+        ).fetchall()
+
+        normalized_rows: list[tuple[int, str, float, str, int]] = []
+        values: list[float] = []
+        for row in rows:
+            timestamp = str(row[0])
+            raw_value = float(row[1])
+            raw_unit = str(row[2])
+            ingestion_run_id = int(row[3])
+            normalized_value = _normalize_value(
+                raw_value,
+                raw_unit=raw_unit,
+                target_unit=metric_source.normalize_to_unit,
+                metric_source=metric_source,
+                timestamp=timestamp,
+            )
+            normalized_rows.append(
+                (
+                    metric_source.id,
+                    timestamp,
+                    normalized_value,
+                    metric_source.normalize_to_unit,
+                    ingestion_run_id,
+                )
+            )
+            values.append(normalized_value)
+
+        connection.executemany(
+            """
+            INSERT INTO normalized_sample (
+                metric_source_id,
+                timestamp_utc,
+                value,
+                unit,
+                ingestion_run_id
+            )
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(metric_source_id, timestamp_utc) DO UPDATE SET
+                value = excluded.value,
+                unit = excluded.unit,
+                ingestion_run_id = excluded.ingestion_run_id
+            """,
+            normalized_rows,
+        )
+        return NormalizationResult(
+            role=role,
+            normalized_count=len(normalized_rows),
+            unit=metric_source.normalize_to_unit,
+            values=values,
+        )
+
+
 def _format_optional_time(value: datetime | None) -> str | None:
     if value is None:
         return None
@@ -353,3 +432,22 @@ def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         raise ValueError("Ingestion timestamps must be timezone-aware")
     return value.astimezone(UTC)
+
+
+def _normalize_value(
+    value: float,
+    *,
+    raw_unit: str,
+    target_unit: str,
+    metric_source: MetricSourceRow,
+    timestamp: str,
+) -> float:
+    if raw_unit == target_unit:
+        return value
+    if raw_unit == "W" and target_unit == "kW":
+        return value / 1000
+    raise UnitNormalizationError(
+        "Cannot normalize unit "
+        f"{raw_unit!r} to {target_unit!r} for "
+        f"{metric_source.measurement}/{metric_source.entity_id} at {timestamp}"
+    )
