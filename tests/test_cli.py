@@ -245,6 +245,14 @@ def test_report_command_writes_csv_output(tmp_path) -> None:
         "ending_soc_kwh",
         "avoided_import_kwh",
         "avoided_export_kwh",
+        "influx_url",
+        "influx_database",
+        "ingestion_query_start_utc",
+        "ingestion_query_end_utc",
+        "grid_import_entity_id",
+        "grid_export_entity_id",
+        "solar_production_entity_id",
+        "non_default_mappings",
     ]
     assert [row["scenario_name"] for row in rows] == ["1kWh", "2kWh"]
     assert rows[0]["capacity_kwh"] == "1"
@@ -267,6 +275,65 @@ def test_report_command_refuses_to_overwrite_csv_without_option(tmp_path, capsys
     captured = capsys.readouterr()
     assert "already exists" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_report_command_includes_metric_mapping_and_source_metadata(tmp_path, capsys) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    ingestion_db = tmp_path / "ingestion.sqlite3"
+    _write_ingestion_metadata(ingestion_db)
+    _persist_reportable_run(
+        simulation_db,
+        battery_capacities_kwh=[1.0],
+        ingestion_db=ingestion_db,
+    )
+
+    exit_code = main(["report", "--simulation-db", str(simulation_db)])
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "Source: url=http://192.168.1.10:8086 database=hass" in output
+    assert "grid_import_power=power_consumed (default)" in output
+    assert "grid_export_power=power_produced (default)" in output
+    assert (
+        "solar_production_power=zonneplan_one_optimized_omvormer_last_measured_value (default)"
+        in output
+    )
+
+
+def test_report_csv_includes_metric_mapping_and_source_metadata(tmp_path) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    ingestion_db = tmp_path / "ingestion.sqlite3"
+    output_path = tmp_path / "results.csv"
+    _write_ingestion_metadata(ingestion_db)
+    _persist_reportable_run(
+        simulation_db,
+        battery_capacities_kwh=[1.0],
+        ingestion_db=ingestion_db,
+    )
+
+    exit_code = main(
+        [
+            "report",
+            "--simulation-db",
+            str(simulation_db),
+            "--output",
+            str(output_path),
+            "--overwrite",
+        ]
+    )
+
+    assert exit_code == 0
+    with output_path.open(newline="") as csv_file:
+        row = next(csv.DictReader(csv_file))
+
+    assert row["influx_url"] == "http://192.168.1.10:8086"
+    assert row["influx_database"] == "hass"
+    assert row["grid_import_entity_id"] == "power_consumed"
+    assert row["grid_export_entity_id"] == "power_produced"
+    assert row["solar_production_entity_id"] == (
+        "zonneplan_one_optimized_omvormer_last_measured_value"
+    )
+    assert row["non_default_mappings"] == ""
 
 
 def _write_aligned_power_samples(db_path: Path) -> None:
@@ -353,7 +420,40 @@ def _write_aligned_power_samples(db_path: Path) -> None:
         )
 
 
-def _persist_reportable_run(simulation_db: Path, *, battery_capacities_kwh: list[float]) -> int:
+def _write_ingestion_metadata(db_path: Path) -> None:
+    initialize_cache(db_path)
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO ingestion_run (
+                started_at_utc,
+                influx_url,
+                influx_database,
+                local_timezone,
+                query_start_utc,
+                query_end_utc,
+                status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                datetime.now(UTC).isoformat(),
+                "http://192.168.1.10:8086",
+                "hass",
+                "Europe/Amsterdam",
+                "2025-06-30T22:00:00Z",
+                "2026-06-30T22:00:00Z",
+                "completed",
+            ),
+        )
+
+
+def _persist_reportable_run(
+    simulation_db: Path,
+    *,
+    battery_capacities_kwh: list[float],
+    ingestion_db: Path | None = None,
+) -> int:
     result = simulate_scenarios(
         [
             AlignedPowerRow(datetime(2025, 7, 1, 0, 0, tzinfo=UTC), 0.0, 2.0, 2.0, ""),
@@ -365,7 +465,7 @@ def _persist_reportable_run(simulation_db: Path, *, battery_capacities_kwh: list
     )
     return persist_simulation_result(
         db_path=simulation_db,
-        ingestion_db_path=simulation_db.parent / "ingestion.sqlite3",
+        ingestion_db_path=ingestion_db or simulation_db.parent / "ingestion.sqlite3",
         query_start_utc=datetime(2025, 6, 30, 22, 0, tzinfo=UTC),
         query_end_utc=datetime(2026, 6, 30, 22, 0, tzinfo=UTC),
         result=result,

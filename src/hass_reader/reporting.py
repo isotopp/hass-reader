@@ -5,6 +5,8 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+from hass_reader.cache import SEED_METRIC_SOURCES
+
 
 CSV_FIELDNAMES = [
     "run_id",
@@ -21,7 +23,20 @@ CSV_FIELDNAMES = [
     "ending_soc_kwh",
     "avoided_import_kwh",
     "avoided_export_kwh",
+    "influx_url",
+    "influx_database",
+    "ingestion_query_start_utc",
+    "ingestion_query_end_utc",
+    "grid_import_entity_id",
+    "grid_export_entity_id",
+    "solar_production_entity_id",
+    "non_default_mappings",
 ]
+PRIMARY_MAPPING_ROLES = (
+    "grid_import_power",
+    "grid_export_power",
+    "solar_production_power",
+)
 
 
 class ReportingError(ValueError):
@@ -52,12 +67,39 @@ class SimulationReport:
     query_end_utc: str
     baseline: ReportScenario
     battery_scenarios: list[ReportScenario]
+    source_metadata: SourceMetadata
+
+
+@dataclass(frozen=True)
+class MetricMapping:
+    role: str
+    entity_id: str
+    is_default: bool
+
+
+@dataclass(frozen=True)
+class SourceMetadata:
+    influx_url: str | None
+    influx_database: str | None
+    ingestion_query_start_utc: str | None
+    ingestion_query_end_utc: str | None
+    mappings: dict[str, MetricMapping]
+
+    @property
+    def non_default_mapping_roles(self) -> list[str]:
+        return [
+            role
+            for role in PRIMARY_MAPPING_ROLES
+            if role in self.mappings and not self.mappings[role].is_default
+        ]
 
 
 def format_human_summary(report: SimulationReport) -> str:
     lines = [
         f"Simulation run {report.run_id}",
         f"Range: {report.query_start_utc}..{report.query_end_utc}",
+        _format_source_metadata(report.source_metadata),
+        _format_metric_mappings(report.source_metadata),
         (
             "Baseline: "
             f"import={_format_kwh(report.baseline.imported_kwh)} "
@@ -88,6 +130,7 @@ def load_simulation_report(db_path: str | Path, *, run_id: int | None = None) ->
     with sqlite3.connect(resolved_path) as connection:
         run = _load_run(connection, run_id=run_id)
         raw_scenarios = _load_scenarios(connection, run_id=run.id)
+    source_metadata = _load_source_metadata(Path(run.ingestion_db_path))
 
     baseline = next((scenario for scenario in raw_scenarios if scenario.is_baseline), None)
     if baseline is None:
@@ -105,6 +148,7 @@ def load_simulation_report(db_path: str | Path, *, run_id: int | None = None) ->
         query_end_utc=run.query_end_utc,
         baseline=_with_avoided_energy(baseline, baseline),
         battery_scenarios=battery_scenarios,
+        source_metadata=source_metadata,
     )
 
 
@@ -229,6 +273,7 @@ def _format_kwh(value: float) -> str:
 
 
 def _csv_row(report: SimulationReport, scenario: ReportScenario) -> dict[str, str]:
+    source_metadata = report.source_metadata
     return {
         "run_id": str(report.run_id),
         "query_start_utc": report.query_start_utc,
@@ -244,8 +289,106 @@ def _csv_row(report: SimulationReport, scenario: ReportScenario) -> dict[str, st
         "ending_soc_kwh": _format_decimal(scenario.ending_soc_kwh),
         "avoided_import_kwh": _format_decimal(scenario.avoided_import_kwh),
         "avoided_export_kwh": _format_decimal(scenario.avoided_export_kwh),
+        "influx_url": source_metadata.influx_url or "",
+        "influx_database": source_metadata.influx_database or "",
+        "ingestion_query_start_utc": source_metadata.ingestion_query_start_utc or "",
+        "ingestion_query_end_utc": source_metadata.ingestion_query_end_utc or "",
+        "grid_import_entity_id": _mapping_entity_id(source_metadata, "grid_import_power"),
+        "grid_export_entity_id": _mapping_entity_id(source_metadata, "grid_export_power"),
+        "solar_production_entity_id": _mapping_entity_id(
+            source_metadata,
+            "solar_production_power",
+        ),
+        "non_default_mappings": ",".join(source_metadata.non_default_mapping_roles),
     }
 
 
 def _format_decimal(value: float) -> str:
     return f"{value:.12g}"
+
+
+def _load_source_metadata(ingestion_db_path: Path) -> SourceMetadata:
+    default_sources = {source.role: source for source in SEED_METRIC_SOURCES}
+    if not ingestion_db_path.exists():
+        return SourceMetadata(
+            influx_url=None,
+            influx_database=None,
+            ingestion_query_start_utc=None,
+            ingestion_query_end_utc=None,
+            mappings={},
+        )
+
+    try:
+        with sqlite3.connect(ingestion_db_path) as connection:
+            ingestion_run = connection.execute(
+                """
+                SELECT influx_url, influx_database, query_start_utc, query_end_utc
+                FROM ingestion_run
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+            rows = connection.execute(
+                """
+                SELECT role, entity_id
+                FROM metric_source
+                WHERE role IN (?, ?, ?)
+                """,
+                PRIMARY_MAPPING_ROLES,
+            ).fetchall()
+    except sqlite3.DatabaseError:
+        return SourceMetadata(
+            influx_url=None,
+            influx_database=None,
+            ingestion_query_start_utc=None,
+            ingestion_query_end_utc=None,
+            mappings={},
+        )
+
+    mappings = {}
+    for row in rows:
+        role = str(row[0])
+        entity_id = str(row[1])
+        mappings[role] = MetricMapping(
+            role=role,
+            entity_id=entity_id,
+            is_default=role in default_sources and default_sources[role].entity_id == entity_id,
+        )
+
+    return SourceMetadata(
+        influx_url=None if ingestion_run is None else str(ingestion_run[0]),
+        influx_database=None if ingestion_run is None else str(ingestion_run[1]),
+        ingestion_query_start_utc=None if ingestion_run is None else str(ingestion_run[2]),
+        ingestion_query_end_utc=None if ingestion_run is None else str(ingestion_run[3]),
+        mappings=mappings,
+    )
+
+
+def _format_source_metadata(source_metadata: SourceMetadata) -> str:
+    if source_metadata.influx_url is None or source_metadata.influx_database is None:
+        return "Source: unavailable"
+    return (
+        f"Source: url={source_metadata.influx_url} "
+        f"database={source_metadata.influx_database} "
+        f"range={source_metadata.ingestion_query_start_utc}.."
+        f"{source_metadata.ingestion_query_end_utc}"
+    )
+
+
+def _format_metric_mappings(source_metadata: SourceMetadata) -> str:
+    parts = []
+    for role in PRIMARY_MAPPING_ROLES:
+        mapping = source_metadata.mappings.get(role)
+        if mapping is None:
+            parts.append(f"{role}=unavailable")
+            continue
+        label = "default" if mapping.is_default else "non-default"
+        parts.append(f"{role}={mapping.entity_id} ({label})")
+    return "Metric mapping: " + ", ".join(parts)
+
+
+def _mapping_entity_id(source_metadata: SourceMetadata, role: str) -> str:
+    mapping = source_metadata.mappings.get(role)
+    if mapping is None:
+        return ""
+    return mapping.entity_id

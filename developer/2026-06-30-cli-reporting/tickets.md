@@ -164,7 +164,7 @@ Execution result:
 
 ## REP-004: Include Metric Mapping and Source Metadata
 
-Status: Not Started
+Status: Done
 
 Source story: Story 3, Show Metric Mapping
 
@@ -188,6 +188,15 @@ Acceptance criteria:
 - Reports identify mappings that differ from the defaults documented in `AGENTS.md`.
 - Missing ingestion metadata does not crash summary reporting, but it is clearly marked as
   unavailable.
+
+Execution result:
+
+- Reports now load source metadata from the ingestion database recorded by `simulation_run`.
+- Human output includes Influx source details and metric mapping status.
+- CSV output includes source and metric mapping columns.
+- Missing or unreadable ingestion metadata is reported as unavailable without failing summaries.
+- Covered by `tests/test_cli.py`.
+- Committed with the `REP-004` implementation.
 
 ## REP-005: Harden Reporting Exit Codes and Error Streams
 
