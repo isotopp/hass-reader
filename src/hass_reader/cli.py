@@ -22,6 +22,7 @@ from hass_reader.influx import (
     format_influx_time,
 )
 from hass_reader.ingestion import align_primary_power, ingest_raw_metric, normalize_metric
+from hass_reader.reporting import format_human_summary, load_simulation_report
 from hass_reader.simulation_db import (
     DEFAULT_SIMULATION_DB_PATH,
     persist_failed_simulation_run,
@@ -105,6 +106,17 @@ def main(
             print(f"error: {error}", file=sys.stderr)
             return 1
         print(f"simulation complete: run_id={result.run_id} scenarios={result.scenario_count}")
+        if simulation_runner is None:
+            report = load_simulation_report(args.simulation_db, run_id=result.run_id)
+            print(format_human_summary(report))
+        return 0
+    if args.command == "report":
+        try:
+            report = load_simulation_report(args.simulation_db, run_id=args.run_id)
+        except Exception as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        print(format_human_summary(report))
         return 0
     parser.print_help()
     return 0
@@ -307,6 +319,9 @@ def _build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--end", default=_format_local_date(default_range.end_utc))
     simulate.add_argument("--timezone", default=DEFAULT_LOCAL_TIMEZONE)
     simulate.add_argument("--store-steps", action="store_true")
+    report = subparsers.add_parser("report")
+    report.add_argument("--simulation-db", type=Path, default=DEFAULT_SIMULATION_DB_PATH)
+    report.add_argument("--run-id", type=int, default=None)
     return parser
 
 

@@ -90,7 +90,7 @@ Execution result:
 
 ## REP-002: Add Compact Human Summary Output
 
-Status: Not Started
+Status: Done
 
 Source story: Story 1, Human Summary
 
@@ -112,6 +112,14 @@ Acceptance criteria:
 - Report output includes simulated import/export and avoided import/export with units.
 - The summary is stable enough for a user to compare 5 kWh, 10 kWh, 30 kWh, and 35 kWh runs.
 - Tests assert public CLI output, not table-rendering internals.
+
+Execution result:
+
+- Implemented `report` command and compact summary formatting in `src/hass_reader/cli.py` and
+  `src/hass_reader/reporting.py`.
+- Successful real `simulate` runs print the same compact summary for the newly created run.
+- Covered by `tests/test_cli.py`.
+- Committed with the `REP-002` implementation.
 
 ## REP-003: Export Simulation Summary as CSV
 

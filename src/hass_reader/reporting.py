@@ -35,6 +35,20 @@ class SimulationReport:
     battery_scenarios: list[ReportScenario]
 
 
+def format_human_summary(report: SimulationReport) -> str:
+    lines = [
+        f"Simulation run {report.run_id}",
+        f"Range: {report.query_start_utc}..{report.query_end_utc}",
+        (
+            "Baseline: "
+            f"import={_format_kwh(report.baseline.imported_kwh)} "
+            f"export={_format_kwh(report.baseline.exported_kwh)}"
+        ),
+    ]
+    lines.extend(_format_battery_summary(scenario) for scenario in report.battery_scenarios)
+    return "\n".join(lines)
+
+
 def load_simulation_report(db_path: str | Path, *, run_id: int | None = None) -> SimulationReport:
     resolved_path = Path(db_path)
     if not resolved_path.exists():
@@ -167,3 +181,17 @@ def _with_avoided_energy(
         avoided_import_kwh=baseline.imported_kwh - scenario.imported_kwh,
         avoided_export_kwh=baseline.exported_kwh - scenario.exported_kwh,
     )
+
+
+def _format_battery_summary(scenario: ReportScenario) -> str:
+    return (
+        f"{scenario.name}: "
+        f"import={_format_kwh(scenario.imported_kwh)} "
+        f"export={_format_kwh(scenario.exported_kwh)} "
+        f"avoided_import={_format_kwh(scenario.avoided_import_kwh)} "
+        f"avoided_export={_format_kwh(scenario.avoided_export_kwh)}"
+    )
+
+
+def _format_kwh(value: float) -> str:
+    return f"{value:.2f} kWh"

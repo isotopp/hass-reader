@@ -3,8 +3,10 @@ import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
 
+from hass_reader.battery_simulation import AlignedPowerRow, simulate_scenarios
 from hass_reader.cli import IngestCommandResult, SimulationCommandResult, main
 from hass_reader.cache import initialize_cache
+from hass_reader.simulation_db import persist_simulation_result
 
 
 def test_ingest_command_uses_documented_defaults(tmp_path, capsys) -> None:
@@ -147,6 +149,9 @@ def test_simulate_command_reads_ingestion_cache_and_writes_simulation_db(tmp_pat
     assert "progress=0% samples=0/3" in output
     assert "progress=100% samples=3/3" in output
     assert "simulation complete: run_id=1 scenarios=2" in output
+    assert "Baseline: import=1.00 kWh export=1.00 kWh" in output
+    assert "1kWh: import=0.20 kWh export=0.00 kWh" in output
+    assert "avoided_import=0.80 kWh avoided_export=1.00 kWh" in output
     with sqlite3.connect(simulation_db) as connection:
         rows = connection.execute(
             """
@@ -170,6 +175,38 @@ def test_simulate_command_reads_ingestion_cache_and_writes_simulation_db(tmp_pat
         ("baseline", 1.0, 1.0, 0.0, 0.0, 0.0),
         ("1kWh", 0.2, 0.0, 1.0, 1.0, 0.2),
     ]
+
+
+def test_report_command_prints_compact_summary_for_latest_run(tmp_path, capsys) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    _persist_reportable_run(simulation_db, battery_capacities_kwh=[1.0, 2.0])
+
+    exit_code = main(["report", "--simulation-db", str(simulation_db)])
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "Simulation run 1" in output
+    assert "Baseline: import=2.00 kWh export=2.00 kWh" in output
+    assert "1kWh: import=1.20 kWh export=1.00 kWh" in output
+    assert "avoided_import=0.80 kWh avoided_export=1.00 kWh" in output
+    assert "2kWh: import=0.40 kWh export=0.00 kWh" in output
+    assert "avoided_import=1.60 kWh avoided_export=2.00 kWh" in output
+
+
+def test_report_command_can_select_run_id(tmp_path, capsys) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    first_run_id = _persist_reportable_run(simulation_db, battery_capacities_kwh=[1.0])
+    _persist_reportable_run(simulation_db, battery_capacities_kwh=[2.0])
+
+    exit_code = main(
+        ["report", "--simulation-db", str(simulation_db), "--run-id", str(first_run_id)]
+    )
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert f"Simulation run {first_run_id}" in output
+    assert "1kWh:" in output
+    assert "2kWh:" not in output
 
 
 def _write_aligned_power_samples(db_path: Path) -> None:
@@ -254,3 +291,22 @@ def _write_aligned_power_samples(db_path: Path) -> None:
                 ),
             ],
         )
+
+
+def _persist_reportable_run(simulation_db: Path, *, battery_capacities_kwh: list[float]) -> int:
+    result = simulate_scenarios(
+        [
+            AlignedPowerRow(datetime(2025, 7, 1, 0, 0, tzinfo=UTC), 0.0, 2.0, 2.0, ""),
+            AlignedPowerRow(datetime(2025, 7, 1, 1, 0, tzinfo=UTC), 2.0, 0.0, 0.0, ""),
+            AlignedPowerRow(datetime(2025, 7, 1, 2, 0, tzinfo=UTC), 0.0, 0.0, 0.0, ""),
+        ],
+        battery_capacities_kwh=battery_capacities_kwh,
+        efficiency=0.8,
+    )
+    return persist_simulation_result(
+        db_path=simulation_db,
+        ingestion_db_path=simulation_db.parent / "ingestion.sqlite3",
+        query_start_utc=datetime(2025, 6, 30, 22, 0, tzinfo=UTC),
+        query_end_utc=datetime(2026, 6, 30, 22, 0, tzinfo=UTC),
+        result=result,
+    )
