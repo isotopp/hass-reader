@@ -111,6 +111,10 @@ def main(
             print(format_human_summary(report))
         return 0
     if args.command == "report":
+        validation_error = _validate_report_args(args)
+        if validation_error is not None:
+            print(f"error: {validation_error}", file=sys.stderr)
+            return 2
         try:
             report = load_simulation_report(args.simulation_db, run_id=args.run_id)
             if args.output is not None:
@@ -367,6 +371,12 @@ def _validate_simulation_args(args: argparse.Namespace) -> str | None:
     if not 0 < args.efficiency <= 1:
         return "invalid --efficiency: expected a decimal where 0 < efficiency <= 1"
     args.battery_capacities_kwh = capacities
+    return None
+
+
+def _validate_report_args(args: argparse.Namespace) -> str | None:
+    if args.run_id is not None and args.run_id <= 0:
+        return "invalid --run-id: expected a positive integer"
     return None
 
 

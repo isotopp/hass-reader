@@ -200,7 +200,7 @@ Execution result:
 
 ## REP-005: Harden Reporting Exit Codes and Error Streams
 
-Status: Not Started
+Status: Done
 
 Source story: Story 4, Exit Codes
 
@@ -222,6 +222,14 @@ Acceptance criteria:
 - Runtime failures use exit code `1`.
 - All error messages are written to stderr.
 - Tests verify no traceback appears for expected user-facing failures.
+
+Execution result:
+
+- Added `--run-id` validation before report database access.
+- Covered missing database, missing run, invalid run ID, and CSV overwrite failure behavior.
+- Confirmed expected user-facing errors go to stderr without tracebacks.
+- Covered by `tests/test_cli.py`.
+- Committed with the `REP-005` implementation.
 
 ## Suggested Execution Order
 

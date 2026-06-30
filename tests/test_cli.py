@@ -277,6 +277,45 @@ def test_report_command_refuses_to_overwrite_csv_without_option(tmp_path, capsys
     assert "Traceback" not in captured.err
 
 
+def test_report_command_returns_runtime_failure_for_missing_database(tmp_path, capsys) -> None:
+    exit_code = main(["report", "--simulation-db", str(tmp_path / "missing.sqlite3")])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "simulation database not found" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_report_command_returns_runtime_failure_for_missing_run(tmp_path, capsys) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    _persist_reportable_run(simulation_db, battery_capacities_kwh=[1.0])
+
+    exit_code = main(["report", "--simulation-db", str(simulation_db), "--run-id", "999"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "simulation run 999 not found" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_report_command_rejects_invalid_run_id_before_opening_database(tmp_path, capsys) -> None:
+    exit_code = main(
+        [
+            "report",
+            "--simulation-db",
+            str(tmp_path / "missing.sqlite3"),
+            "--run-id",
+            "0",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "invalid --run-id" in captured.err
+    assert "simulation database not found" not in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_report_command_includes_metric_mapping_and_source_metadata(tmp_path, capsys) -> None:
     simulation_db = tmp_path / "simulation.sqlite3"
     ingestion_db = tmp_path / "ingestion.sqlite3"
