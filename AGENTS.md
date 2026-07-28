@@ -18,6 +18,10 @@ The default analysis period is July 2025 through the end of June 2026:
 - Influx UTC half-open interval: `2025-06-30T22:00:00Z` to
   `2026-06-30T22:00:00Z`.
 
+The upstream InfluxDB source can roll over and may no longer provide this historical interval.
+Preserve and reuse existing ingestion and simulation SQLite data for historical reporting. Do not
+make `report`, `soc`, or `autonomy` depend on refetching the original interval from InfluxDB.
+
 ## Development Commands
 
 Run all commands from the repository root.
@@ -88,3 +92,15 @@ cross-checks for P1 import/export in watts:
 - Prefer half-open time intervals: `start <= time < end`.
 - Use Europe/Amsterdam as the reporting timezone unless the CLI overrides it.
 - Keep Influx query construction isolated so it can be tested without a live database.
+- Use `simulate --store-steps` for reports that need interval-level behavior, including `soc` and
+  `autonomy`.
+- `hass-reader autonomy` reports time-weighted autonomy by `--bucket day|month` from existing
+  `simulation_step` data.
+- Autonomy is `autonomous_duration / valid_simulated_duration * 100`, where an interval is
+  autonomous when simulated average import power is less than or equal to `--threshold-watts`.
+- The default autonomy threshold is `30 W`, intentionally below the observed roughly `300 W` night
+  idle load.
+- Include the no-battery baseline as an autonomy comparison row by default; battery selectors limit
+  battery rows while keeping the baseline row for context.
+- Split autonomy intervals that cross day or month boundaries proportionally across the affected
+  local-time buckets.

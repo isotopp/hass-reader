@@ -11,6 +11,8 @@ The project will answer questions such as:
 - How much power was produced by the Zonneplan solar array?
 - How much power was fed back to the grid?
 - How would different battery capacities change import, export, and self-consumption?
+- How autonomous is the home by day or month when solar and battery storage cover demand without
+  importing from the grid?
 
 The intended command-line interface accepts a CSV list of battery sizes in kWh and a round-trip
 efficiency fraction:
@@ -20,8 +22,13 @@ uv run hass-reader simulate \
   --start 2025-07-01 \
   --end 2026-07-01 \
   --batteries 5,10,15 \
-  --efficiency 0.9
+  --efficiency 0.9 \
+  --store-steps
 ```
+
+Use `--store-steps` when you want later state-of-charge or autonomy reports. Summary-only simulation
+runs can still produce annual import/export reports, but they cannot answer interval-based autonomy
+questions.
 
 ## Development
 
@@ -68,6 +75,12 @@ Detailed discovery documentation:
 - [InfluxDB metrics](docs/influx-metrics.md)
 - [Metric ingestion cache](docs/metric-ingestion.md)
 - [Battery simulation](docs/battery-simulation.md)
+- [Autonomy reporting](docs/autonomy.md)
+
+The historical source data used for the July 2025 through June 2026 analysis may no longer be fully
+available from InfluxDB because the upstream source can roll over. Commands that report from the
+simulation SQLite database, such as `report`, `soc`, and `autonomy`, should reuse existing ingested
+and simulated data rather than requiring a fresh Influx fetch for that historical interval.
 
 ## Discovered Metrics
 
@@ -176,3 +189,53 @@ The first implementation can report per battery capacity:
 - discharged kWh,
 - losses kWh,
 - ending state of charge.
+
+## Reporting Commands
+
+Simulation summaries:
+
+```sh
+uv run hass-reader report
+uv run hass-reader report --run-id 1
+uv run hass-reader report --output results.csv --overwrite
+```
+
+State-of-charge rollups require runs created with `simulate --store-steps`:
+
+```sh
+uv run hass-reader soc --bucket day
+uv run hass-reader soc --bucket day --batteries 5,10 --output soc.csv --overwrite
+```
+
+Autonomy reports also require stored simulation steps:
+
+```sh
+uv run hass-reader autonomy --bucket month
+uv run hass-reader autonomy --bucket day
+uv run hass-reader autonomy --bucket month --threshold-watts 30
+uv run hass-reader autonomy --bucket month --output autonomy.csv --numbersapp --overwrite
+```
+
+Autonomy is a time-weighted percentage:
+
+```text
+autonomy_percent = autonomous_duration / valid_simulated_duration * 100
+```
+
+An interval is autonomous when the simulated average import power for that scenario is less than or
+equal to `--threshold-watts`. The default threshold is `30 W`, chosen to be well below the observed
+roughly `300 W` night idle load. Export does not make an interval non-autonomous. The no-battery
+baseline is included as a comparison row by default; battery selectors limit battery rows while
+keeping the baseline for context.
+
+Autonomy output includes:
+
+- bucket label,
+- scenario name and capacity,
+- autonomy percentage,
+- autonomous hours,
+- valid hours,
+- imported kWh.
+
+CSV export adds stable snake_case columns and supports `--numbersapp`, which formats timestamps as
+`YYYY-MM-DD HH:MM:SS` instead of ISO `...Z` strings for Apple Numbers compatibility.
