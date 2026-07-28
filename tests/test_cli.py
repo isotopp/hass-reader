@@ -494,15 +494,15 @@ def test_autonomy_command_rejects_invalid_threshold_before_opening_database(
     assert "Traceback" not in captured.err
 
 
-def test_autonomy_command_accepts_valid_inputs_before_read_model_exists(
-    tmp_path,
-    capsys,
-) -> None:
+def test_autonomy_command_reports_missing_step_data(tmp_path, capsys) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    _persist_reportable_run(simulation_db, battery_capacities_kwh=[1.0], persist_steps=False)
+
     exit_code = main(
         [
             "autonomy",
             "--simulation-db",
-            str(tmp_path / "missing.sqlite3"),
+            str(simulation_db),
             "--run-id",
             "1",
             "--batteries",
@@ -522,8 +522,9 @@ def test_autonomy_command_accepts_valid_inputs_before_read_model_exists(
 
     captured = capsys.readouterr()
     assert exit_code == 1
-    assert "autonomy reporting is not implemented yet" in captured.err
-    assert "simulation database not found" not in captured.err
+    assert "simulate --store-steps" in captured.err
+    assert "refetch" not in captured.err.lower()
+    assert "Influx" not in captured.err
     assert "Traceback" not in captured.err
 
 

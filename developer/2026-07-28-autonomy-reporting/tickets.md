@@ -97,7 +97,7 @@ Execution result:
 
 ## AUT-002: Detect Step Availability Without Refetching Source Data
 
-Status: Proposed
+Status: Done
 
 Source story: Story 4, Require Interval Step Data
 
@@ -118,6 +118,17 @@ Acceptance criteria:
 - The error does not suggest refetching the original historical Influx interval.
 - A run with step data passes the availability check.
 - Tests use temporary SQLite databases only.
+
+Execution result:
+
+- Added `src/hass_reader/autonomy_reporting.py` with run/scenario resolution and step availability
+  checks.
+- `hass-reader autonomy` now checks existing simulation step data before later report calculation.
+- Summary-only runs fail with guidance to use `simulate --store-steps` and do not suggest refetching
+  the historical Influx interval.
+- Covered by `tests/test_autonomy_reporting.py` and `tests/test_cli.py`.
+- Verified with `uv run pytest tests/test_autonomy_reporting.py tests/test_cli.py -k autonomy` and
+  `uv run pytest`.
 
 ## AUT-003: Calculate Daily Autonomy from Step Intervals
 
