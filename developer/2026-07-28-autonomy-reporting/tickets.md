@@ -171,7 +171,7 @@ Execution result:
 
 ## AUT-004: Calculate Monthly Autonomy from Step Intervals
 
-Status: Proposed
+Status: Done
 
 Source story: Story 2, Report Monthly Autonomy
 
@@ -191,6 +191,17 @@ Acceptance criteria:
 - A fixture crossing a month boundary distributes valid and autonomous duration correctly.
 - Filtering with `--start` and `--end` is half-open.
 - Partial months report only the selected interval's valid hours.
+
+Execution result:
+
+- Extended `load_autonomy_rollups` to support `bucket_kind="month"` using local calendar month
+  bounds.
+- Reused proportional interval splitting for month-boundary crossings.
+- Covered half-open filtering and partial month reporting in `tests/test_autonomy_reporting.py`.
+- Verified with `uv run pytest tests/test_autonomy_reporting.py -k monthly`,
+  `uv run pytest tests/test_autonomy_reporting.py tests/test_cli.py -k autonomy`,
+  `uv run ruff check src/hass_reader/autonomy_reporting.py tests/test_autonomy_reporting.py`, and
+  `uv run pytest`.
 
 ## AUT-005: Decide and Implement Baseline Inclusion
 

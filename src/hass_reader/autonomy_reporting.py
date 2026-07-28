@@ -130,8 +130,8 @@ def load_autonomy_rollups(
     timezone_name: str = "UTC",
     threshold_watts: float = 30.0,
 ) -> AutonomyRollupReport:
-    if bucket_kind != "day":
-        raise AutonomyReportingError("invalid bucket_kind: expected day")
+    if bucket_kind not in {"day", "month"}:
+        raise AutonomyReportingError("invalid bucket_kind: expected one of day, month")
     if threshold_watts < 0:
         raise AutonomyReportingError("invalid threshold_watts: expected a non-negative number")
 
@@ -154,6 +154,7 @@ def load_autonomy_rollups(
             for interval in intervals:
                 _add_interval_to_daily_buckets(
                     buckets,
+                    bucket_kind=bucket_kind,
                     scenario=scenario,
                     interval=interval,
                     timezone=timezone,
@@ -305,6 +306,7 @@ def _load_step_intervals(
 def _add_interval_to_daily_buckets(
     buckets: dict[tuple[int, str], _AutonomyBucket],
     *,
+    bucket_kind: str,
     scenario: AutonomyScenario,
     interval: _StepInterval,
     timezone: ZoneInfo,
@@ -332,7 +334,11 @@ def _add_interval_to_daily_buckets(
 
     current_start = start_utc
     while current_start < end_utc:
-        bucket_start, bucket_end = _day_bucket_bounds(current_start, timezone=timezone)
+        bucket_start, bucket_end = _bucket_bounds(
+            current_start,
+            bucket_kind=bucket_kind,
+            timezone=timezone,
+        )
         segment_end = min(end_utc, bucket_end)
         segment_seconds = (segment_end - current_start).total_seconds()
         segment_import_kwh = interval.import_kwh * (segment_seconds / interval_seconds)
@@ -351,10 +357,29 @@ def _add_interval_to_daily_buckets(
         current_start = segment_end
 
 
-def _day_bucket_bounds(timestamp_utc: datetime, *, timezone: ZoneInfo) -> tuple[datetime, datetime]:
+def _bucket_bounds(
+    timestamp_utc: datetime,
+    *,
+    bucket_kind: str,
+    timezone: ZoneInfo,
+) -> tuple[datetime, datetime]:
     local_timestamp = timestamp_utc.astimezone(timezone)
-    local_start = local_timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
-    local_end = local_start + timedelta(days=1)
+    if bucket_kind == "day":
+        local_start = local_timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
+        local_end = local_start + timedelta(days=1)
+        return local_start.astimezone(UTC), local_end.astimezone(UTC)
+
+    local_start = local_timestamp.replace(
+        day=1,
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    if local_start.month == 12:
+        local_end = local_start.replace(year=local_start.year + 1, month=1)
+    else:
+        local_end = local_start.replace(month=local_start.month + 1)
     return local_start.astimezone(UTC), local_end.astimezone(UTC)
 
 
