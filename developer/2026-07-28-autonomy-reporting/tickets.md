@@ -132,7 +132,7 @@ Execution result:
 
 ## AUT-003: Calculate Daily Autonomy from Step Intervals
 
-Status: Proposed
+Status: Done
 
 Source stories: Story 1, Report Daily Autonomy; Story 3, Define Autonomy as Time-Weighted Zero
 Import
@@ -157,6 +157,17 @@ Acceptance criteria:
 - Export during an interval does not make it non-autonomous.
 - Intervals crossing a local midnight are split across both days.
 - The calculation is time-weighted, not energy-reduction weighted.
+
+Execution result:
+
+- Added `load_autonomy_rollups` for daily autonomy rows from existing `simulation_step` data.
+- Implemented inferred interval ends, final interval capping at `simulation_run.query_end_utc`, and
+  watt-threshold autonomy classification.
+- Split intervals crossing local midnight proportionally across daily buckets.
+- Covered by `tests/test_autonomy_reporting.py`.
+- Verified with `uv run pytest tests/test_autonomy_reporting.py -k daily`,
+  `uv run pytest tests/test_autonomy_reporting.py tests/test_cli.py -k autonomy`, and
+  `uv run pytest`.
 
 ## AUT-004: Calculate Monthly Autonomy from Step Intervals
 
