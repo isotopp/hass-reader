@@ -37,7 +37,7 @@ the grid.
 
 Acceptance criteria:
 
-- `hass-reader report --daily` reports one row per local day and battery scenario.
+- `hass-reader autonomy --bucket day` reports one row per local day and battery scenario.
 - The command selects the latest completed simulation run by default.
 - A `--run-id` option selects a specific simulation run.
 - Rows include scenario name, capacity, day, autonomy percentage, autonomous hours, valid hours, and
@@ -52,7 +52,7 @@ behavior.
 
 Acceptance criteria:
 
-- `hass-reader report --monthly` reports one row per local month and battery scenario.
+- `hass-reader autonomy --bucket month` reports one row per local month and battery scenario.
 - Monthly buckets are calendar months in the configured reporting timezone.
 - Rows include scenario name, capacity, month, autonomy percentage, autonomous hours, valid hours,
   and imported kWh.
@@ -67,7 +67,9 @@ plain-language idea of being independent from the grid.
 Acceptance criteria:
 
 - Autonomy is calculated as `autonomous_duration / valid_simulated_duration * 100`.
-- An interval is autonomous when simulated `import_kwh` is less than or equal to a small epsilon.
+- An interval is autonomous when simulated import is less than or equal to a configurable threshold.
+- The default threshold should be well below the house's observed idle load of around 300 W, for
+  example 30 W.
 - Export during an interval does not make that interval non-autonomous.
 - The calculation does not use `1 - imported_kwh / baseline_imported_kwh` as the autonomy
   definition.
@@ -118,18 +120,8 @@ Acceptance criteria:
 
 ## Open Questions
 
-- Should daily and monthly autonomy live under `report --daily` and `report --monthly`, or should
-  there be a dedicated `autonomy` command to avoid overloading the compact summary report?
-- Should `--daily` and `--monthly` be mutually exclusive flags, or should there be a single
-  `--bucket day|month` option?
-- What epsilon should define effectively zero import: a fixed kWh value per interval, a watt-level
-  threshold converted by interval duration, or a configurable threshold?
-- Should baseline autonomy be shown, or should output include only battery scenarios like the current
-  CSV report?
-- Should autonomy count only intervals with household load, or should idle zero-import intervals also
-  count as autonomous time?
-- How should intervals crossing day or month boundaries be split if `simulation_step` continues to
-  store only the interval start timestamp?
+- Should the no-battery baseline be included as a comparison row in terminal and CSV output, or
+  should autonomy output include only configured battery scenarios?
 
 ## Notes and Suggestions
 
@@ -137,6 +129,8 @@ Acceptance criteria:
   summary model in `reporting.py`.
 - The implementation can initially infer interval end timestamps with SQL `LEAD(timestamp_utc)` per
   scenario and cap the final interval at `simulation_run.query_end_utc`.
+- Intervals crossing day or month boundaries should be split and distributed proportionally across
+  the affected buckets.
 - For long-term accuracy and simpler bucket splitting, consider adding `end_utc` or
   `duration_seconds` to `SimulationStepRecord` and `simulation_step`.
 - On-demand rollup generation can follow the existing `soc` command pattern. A persisted
