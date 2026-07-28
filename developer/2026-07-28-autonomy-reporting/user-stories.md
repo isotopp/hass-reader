@@ -75,6 +75,8 @@ Acceptance criteria:
   definition.
 - The implementation can report imported kWh alongside autonomy percentage as a separate context
   value.
+- The no-battery baseline is included as a comparison row by default.
+- Battery selectors limit battery scenario rows but keep the baseline row for context.
 
 ### Story 4: Require Interval Step Data
 
@@ -117,11 +119,6 @@ Acceptance criteria:
 - Date range parsing, timezone handling, and half-open intervals match existing report commands.
 - Missing database, invalid run ID, invalid bucket option, and invalid time range errors are reported
   without tracebacks.
-
-## Open Questions
-
-- Should the no-battery baseline be included as a comparison row in terminal and CSV output, or
-  should autonomy output include only configured battery scenarios?
 
 ## Notes and Suggestions
 

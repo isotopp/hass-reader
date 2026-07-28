@@ -32,8 +32,31 @@ def test_check_autonomy_step_availability_accepts_runs_with_steps(tmp_path) -> N
     )
 
     assert availability.run_id == run_id
-    assert [(scenario.name, scenario.capacity_kwh) for scenario in availability.scenarios] == [
-        ("1kWh", 1.0)
+    assert [
+        (scenario.name, scenario.capacity_kwh, scenario.is_baseline)
+        for scenario in availability.scenarios
+    ] == [
+        ("baseline", 0.0, True),
+        ("1kWh", 1.0, False),
+    ]
+
+
+def test_check_autonomy_step_availability_keeps_baseline_with_selected_batteries(tmp_path) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    run_id = _persist_run(simulation_db, persist_steps=True, battery_capacities_kwh=[1.0, 2.0])
+
+    availability = check_autonomy_step_availability(
+        simulation_db,
+        run_id=run_id,
+        selectors=["2kWh"],
+    )
+
+    assert [
+        (scenario.name, scenario.capacity_kwh, scenario.is_baseline)
+        for scenario in availability.scenarios
+    ] == [
+        ("baseline", 0.0, True),
+        ("2kWh", 2.0, False),
     ]
 
 
@@ -45,8 +68,12 @@ def test_check_autonomy_step_availability_uses_latest_completed_run_by_default(t
     availability = check_autonomy_step_availability(simulation_db, selectors=[])
 
     assert availability.run_id == latest_run_id
-    assert [(scenario.name, scenario.capacity_kwh) for scenario in availability.scenarios] == [
-        ("2kWh", 2.0)
+    assert [
+        (scenario.name, scenario.capacity_kwh, scenario.is_baseline)
+        for scenario in availability.scenarios
+    ] == [
+        ("baseline", 0.0, True),
+        ("2kWh", 2.0, False),
     ]
 
 
@@ -79,6 +106,16 @@ def test_load_daily_autonomy_rollups_reports_time_weighted_zero_import(tmp_path)
         for row in report.rows
     ] == [
         (
+            "baseline",
+            "2025-07-01T00:00:00Z",
+            "2025-07-02T00:00:00Z",
+            pytest.approx(66.6666666667),
+            pytest.approx(2.0),
+            pytest.approx(3.0),
+            pytest.approx(1.0),
+            pytest.approx(1.02),
+        ),
+        (
             "1kWh",
             "2025-07-01T00:00:00Z",
             "2025-07-02T00:00:00Z",
@@ -106,6 +143,7 @@ def test_load_daily_autonomy_rollups_splits_intervals_at_local_midnight(tmp_path
 
     assert [
         (
+            row.scenario_name,
             row.bucket_start_utc,
             row.bucket_end_utc,
             row.autonomy_percent,
@@ -116,6 +154,7 @@ def test_load_daily_autonomy_rollups_splits_intervals_at_local_midnight(tmp_path
         for row in report.rows
     ] == [
         (
+            "baseline",
             "2025-07-01T00:00:00Z",
             "2025-07-02T00:00:00Z",
             pytest.approx(100.0),
@@ -124,6 +163,25 @@ def test_load_daily_autonomy_rollups_splits_intervals_at_local_midnight(tmp_path
             pytest.approx(0.0),
         ),
         (
+            "1kWh",
+            "2025-07-01T00:00:00Z",
+            "2025-07-02T00:00:00Z",
+            pytest.approx(100.0),
+            pytest.approx(0.5),
+            pytest.approx(0.5),
+            pytest.approx(0.0),
+        ),
+        (
+            "baseline",
+            "2025-07-02T00:00:00Z",
+            "2025-07-03T00:00:00Z",
+            pytest.approx(50.0),
+            pytest.approx(0.5),
+            pytest.approx(1.0),
+            pytest.approx(0.5),
+        ),
+        (
+            "1kWh",
             "2025-07-02T00:00:00Z",
             "2025-07-03T00:00:00Z",
             pytest.approx(50.0),
@@ -150,6 +208,7 @@ def test_load_monthly_autonomy_rollups_splits_intervals_at_month_boundary(tmp_pa
     assert report.bucket_kind == "month"
     assert [
         (
+            row.scenario_name,
             row.bucket_start_utc,
             row.bucket_end_utc,
             row.autonomy_percent,
@@ -160,6 +219,7 @@ def test_load_monthly_autonomy_rollups_splits_intervals_at_month_boundary(tmp_pa
         for row in report.rows
     ] == [
         (
+            "baseline",
             "2025-07-01T00:00:00Z",
             "2025-08-01T00:00:00Z",
             pytest.approx(100.0),
@@ -168,6 +228,25 @@ def test_load_monthly_autonomy_rollups_splits_intervals_at_month_boundary(tmp_pa
             pytest.approx(0.0),
         ),
         (
+            "1kWh",
+            "2025-07-01T00:00:00Z",
+            "2025-08-01T00:00:00Z",
+            pytest.approx(100.0),
+            pytest.approx(0.5),
+            pytest.approx(0.5),
+            pytest.approx(0.0),
+        ),
+        (
+            "baseline",
+            "2025-08-01T00:00:00Z",
+            "2025-09-01T00:00:00Z",
+            pytest.approx(50.0),
+            pytest.approx(0.5),
+            pytest.approx(1.0),
+            pytest.approx(0.5),
+        ),
+        (
+            "1kWh",
             "2025-08-01T00:00:00Z",
             "2025-09-01T00:00:00Z",
             pytest.approx(50.0),
@@ -195,6 +274,7 @@ def test_load_monthly_autonomy_rollups_filters_half_open_interval(tmp_path) -> N
 
     assert [
         (
+            row.scenario_name,
             row.bucket_start_utc,
             row.bucket_end_utc,
             row.autonomy_percent,
@@ -205,6 +285,16 @@ def test_load_monthly_autonomy_rollups_filters_half_open_interval(tmp_path) -> N
         for row in report.rows
     ] == [
         (
+            "baseline",
+            "2025-08-01T00:00:00Z",
+            "2025-09-01T00:00:00Z",
+            pytest.approx(100.0),
+            pytest.approx(0.5),
+            pytest.approx(0.5),
+            pytest.approx(0.0),
+        ),
+        (
+            "1kWh",
             "2025-08-01T00:00:00Z",
             "2025-09-01T00:00:00Z",
             pytest.approx(100.0),

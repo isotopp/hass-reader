@@ -205,7 +205,7 @@ Execution result:
 
 ## AUT-005: Decide and Implement Baseline Inclusion
 
-Status: Proposed
+Status: Done
 
 Source stories: Story 3, Define Autonomy as Time-Weighted Zero Import; Open Questions
 
@@ -224,6 +224,14 @@ Acceptance criteria:
 - The no-battery baseline behavior is documented in `user-stories.md`.
 - The autonomy read model follows the chosen baseline inclusion rule.
 - Tests cover the chosen behavior.
+
+Execution result:
+
+- Chose to include the no-battery baseline as a comparison row by default.
+- Battery selectors now limit battery scenarios while keeping the baseline row for context.
+- Documented the baseline behavior in `user-stories.md` and removed the open question.
+- Covered by `tests/test_autonomy_reporting.py`.
+- Verified with `uv run pytest tests/test_autonomy_reporting.py`.
 
 ## AUT-006: Render Terminal Autonomy Reports
 

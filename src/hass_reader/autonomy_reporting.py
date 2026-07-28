@@ -17,6 +17,7 @@ class AutonomyScenario:
     name: str
     capacity_kwh: float
     efficiency: float
+    is_baseline: bool
 
 
 @dataclass(frozen=True)
@@ -144,7 +145,7 @@ def load_autonomy_rollups(
 
     with sqlite3.connect(db_path) as connection:
         run_end_utc = _load_run_end_utc(connection, run_id=availability.run_id)
-        buckets: dict[tuple[int, str], _AutonomyBucket] = {}
+        buckets: dict[tuple[str, int], _AutonomyBucket] = {}
         for scenario in availability.scenarios:
             intervals = _load_step_intervals(
                 connection,
@@ -226,10 +227,10 @@ def _resolve_scenarios(
 ) -> list[AutonomyScenario]:
     rows = connection.execute(
         """
-        SELECT id, name, capacity_kwh, efficiency
+        SELECT id, name, capacity_kwh, efficiency, is_baseline
         FROM simulation_scenario
-        WHERE simulation_run_id = ? AND is_baseline = 0
-        ORDER BY capacity_kwh
+        WHERE simulation_run_id = ?
+        ORDER BY is_baseline DESC, capacity_kwh
         """,
         (run_id,),
     ).fetchall()
@@ -239,20 +240,23 @@ def _resolve_scenarios(
             name=str(row[1]),
             capacity_kwh=float(row[2]),
             efficiency=float(row[3]),
+            is_baseline=bool(row[4]),
         )
         for row in rows
     ]
     if not selectors:
         return scenarios
 
+    baseline_scenarios = [scenario for scenario in scenarios if scenario.is_baseline]
     selected = [
         scenario
         for scenario in scenarios
-        if scenario.name in selectors or f"{scenario.capacity_kwh:g}kWh" in selectors
+        if not scenario.is_baseline
+        and (scenario.name in selectors or f"{scenario.capacity_kwh:g}kWh" in selectors)
     ]
     if not selected:
         raise AutonomyReportingError(f"no selected battery scenarios found for run {run_id}")
-    return selected
+    return [*baseline_scenarios, *selected]
 
 
 def _count_steps(connection: sqlite3.Connection, scenario_id: int) -> int:
@@ -304,7 +308,7 @@ def _load_step_intervals(
 
 
 def _add_interval_to_daily_buckets(
-    buckets: dict[tuple[int, str], _AutonomyBucket],
+    buckets: dict[tuple[str, int], _AutonomyBucket],
     *,
     bucket_kind: str,
     scenario: AutonomyScenario,
@@ -342,7 +346,7 @@ def _add_interval_to_daily_buckets(
         segment_end = min(end_utc, bucket_end)
         segment_seconds = (segment_end - current_start).total_seconds()
         segment_import_kwh = interval.import_kwh * (segment_seconds / interval_seconds)
-        bucket_key = (scenario.id, _format_timestamp(bucket_start))
+        bucket_key = (_format_timestamp(bucket_start), scenario.id)
         if bucket_key not in buckets:
             buckets[bucket_key] = _AutonomyBucket(
                 scenario=scenario,
