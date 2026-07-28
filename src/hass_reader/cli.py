@@ -9,7 +9,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from hass_reader.autonomy_reporting import check_autonomy_step_availability
+from hass_reader.autonomy_reporting import format_autonomy_rollup_summary, load_autonomy_rollups
 from hass_reader.battery_simulation import AlignedPowerRow, simulate_scenarios
 from hass_reader.cache import SEED_METRIC_SOURCES, resolve_cache_path
 from hass_reader.influx import (
@@ -142,16 +142,21 @@ def main(
             print(f"error: {validation_error}", file=sys.stderr)
             return 2
         try:
-            check_autonomy_step_availability(
+            report = load_autonomy_rollups(
                 args.simulation_db,
+                bucket_kind=args.bucket,
                 run_id=args.run_id,
                 selectors=args.battery_selectors,
+                start_utc=args.start_utc,
+                end_utc=args.end_utc,
+                timezone_name=args.timezone,
+                threshold_watts=args.threshold_watts,
             )
         except Exception as error:
             print(f"error: {error}", file=sys.stderr)
             return 1
-        print("error: autonomy report calculation is not implemented yet", file=sys.stderr)
-        return 1
+        print(format_autonomy_rollup_summary(report))
+        return 0
     if args.command == "soc":
         validation_error = _validate_soc_args(args)
         if validation_error is not None:

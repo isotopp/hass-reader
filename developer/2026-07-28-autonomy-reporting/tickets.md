@@ -235,7 +235,7 @@ Execution result:
 
 ## AUT-006: Render Terminal Autonomy Reports
 
-Status: Proposed
+Status: Done
 
 Source stories: Story 1, Report Daily Autonomy; Story 2, Report Monthly Autonomy
 
@@ -257,6 +257,18 @@ Acceptance criteria:
 - Output includes scenario names and battery capacities.
 - Output labels percentages, hours, and kWh clearly.
 - Tests assert stable textual markers rather than brittle full table art.
+
+Execution result:
+
+- Added terminal formatting for autonomy rollup reports.
+- Wired `hass-reader autonomy` to load daily or monthly autonomy rows and print the summary.
+- Output includes run ID, bucket kind, threshold, bucket label, scenario, capacity, autonomy
+  percentage, autonomous hours, valid hours, and imported kWh.
+- Covered by `tests/test_cli.py`.
+- Verified with `uv run pytest tests/test_cli.py -k autonomy`,
+  `uv run pytest tests/test_autonomy_reporting.py tests/test_cli.py -k autonomy`,
+  `uv run ruff check src/hass_reader/autonomy_reporting.py src/hass_reader/cli.py tests/test_cli.py`,
+  and `uv run pytest`.
 
 ## AUT-007: Export Autonomy Buckets as CSV
 

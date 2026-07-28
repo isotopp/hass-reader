@@ -45,8 +45,21 @@ class AutonomyRollupRow:
 class AutonomyRollupReport:
     run_id: int
     bucket_kind: str
+    threshold_watts: float
     scenarios: list[AutonomyScenario]
     rows: list[AutonomyRollupRow]
+
+
+def format_autonomy_rollup_summary(report: AutonomyRollupReport) -> str:
+    lines = [
+        (
+            f"Autonomy report run {report.run_id} bucket={report.bucket_kind} "
+            f"threshold={report.threshold_watts:g} W"
+        ),
+        "Bucket      Scenario  Cap kWh  Autonomy  Auto h  Valid h  Import kWh",
+    ]
+    lines.extend(_format_autonomy_rollup_row(row) for row in report.rows)
+    return "\n".join(lines)
 
 
 @dataclass
@@ -167,6 +180,7 @@ def load_autonomy_rollups(
     return AutonomyRollupReport(
         run_id=availability.run_id,
         bucket_kind=bucket_kind,
+        threshold_watts=threshold_watts,
         scenarios=availability.scenarios,
         rows=[
             _bucket_to_row(bucket_kind=bucket_kind, bucket=buckets[key])
@@ -400,6 +414,19 @@ def _bucket_to_row(*, bucket_kind: str, bucket: _AutonomyBucket) -> AutonomyRoll
         valid_hours=bucket.valid_hours,
         non_autonomous_hours=bucket.non_autonomous_hours,
         imported_kwh=bucket.imported_kwh,
+    )
+
+
+def _format_autonomy_rollup_row(row: AutonomyRollupRow) -> str:
+    bucket_label = row.bucket_start_utc[:7] if row.bucket_kind == "month" else row.bucket_start_utc[:10]
+    return (
+        f"{bucket_label:<10} "
+        f"{row.scenario_name:<8} "
+        f"{row.capacity_kwh:>7.2f} "
+        f"{row.autonomy_percent:>9.2f}% "
+        f"{row.autonomous_hours:>7.2f} "
+        f"{row.valid_hours:>8.2f} "
+        f"{row.imported_kwh:>11.2f}"
     )
 
 

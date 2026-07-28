@@ -528,6 +528,73 @@ def test_autonomy_command_reports_missing_step_data(tmp_path, capsys) -> None:
     assert "Traceback" not in captured.err
 
 
+def test_autonomy_command_prints_daily_summary(tmp_path, capsys) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    _persist_short_autonomy_run(simulation_db)
+
+    exit_code = main(
+        [
+            "autonomy",
+            "--simulation-db",
+            str(simulation_db),
+            "--run-id",
+            "1",
+            "--batteries",
+            "1",
+            "--bucket",
+            "day",
+            "--timezone",
+            "UTC",
+            "--start",
+            "2025-07-01T00:00:00",
+            "--end",
+            "2025-07-01T02:00:00",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Autonomy report run 1 bucket=day threshold=30 W" in captured.out
+    assert "Bucket      Scenario  Cap kWh  Autonomy  Auto h  Valid h  Import kWh" in captured.out
+    assert "2025-07-01 baseline" in captured.out
+    assert "2025-07-01 1kWh" in captured.out
+    assert "50.00%" in captured.out
+    assert "Traceback" not in captured.err
+
+
+def test_autonomy_command_prints_monthly_summary(tmp_path, capsys) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    _persist_short_autonomy_run(simulation_db)
+
+    exit_code = main(
+        [
+            "autonomy",
+            "--simulation-db",
+            str(simulation_db),
+            "--run-id",
+            "1",
+            "--batteries",
+            "1",
+            "--bucket",
+            "month",
+            "--timezone",
+            "UTC",
+            "--start",
+            "2025-07-01T00:00:00",
+            "--end",
+            "2025-07-01T02:00:00",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Autonomy report run 1 bucket=month threshold=30 W" in captured.out
+    assert "2025-07    baseline" in captured.out
+    assert "2025-07    1kWh" in captured.out
+    assert "50.00%" in captured.out
+    assert "Traceback" not in captured.err
+
+
 def test_soc_command_accepts_valid_inputs_and_prints_summary(tmp_path, capsys) -> None:
     simulation_db = tmp_path / "simulation.sqlite3"
     _persist_reportable_run(simulation_db, battery_capacities_kwh=[1.0], persist_steps=True)
@@ -919,6 +986,26 @@ def _write_ingestion_metadata(db_path: Path) -> None:
                 "completed",
             ),
         )
+
+
+def _persist_short_autonomy_run(simulation_db: Path) -> int:
+    result = simulate_scenarios(
+        [
+            AlignedPowerRow(datetime(2025, 7, 1, 0, 0, tzinfo=UTC), 0.0, 2.0, 2.0, ""),
+            AlignedPowerRow(datetime(2025, 7, 1, 1, 0, tzinfo=UTC), 2.0, 0.0, 0.0, ""),
+            AlignedPowerRow(datetime(2025, 7, 1, 2, 0, tzinfo=UTC), 0.0, 0.0, 0.0, ""),
+        ],
+        battery_capacities_kwh=[1.0],
+        efficiency=0.8,
+    )
+    return persist_simulation_result(
+        db_path=simulation_db,
+        ingestion_db_path=simulation_db.parent / "ingestion.sqlite3",
+        query_start_utc=datetime(2025, 7, 1, 0, 0, tzinfo=UTC),
+        query_end_utc=datetime(2025, 7, 1, 2, 0, tzinfo=UTC),
+        result=result,
+        persist_steps=True,
+    )
 
 
 def _persist_reportable_run(
