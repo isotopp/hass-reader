@@ -1,10 +1,27 @@
 from __future__ import annotations
 
+import csv
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+AUTONOMY_ROLLUP_CSV_FIELDNAMES = [
+    "run_id",
+    "scenario_name",
+    "capacity_kwh",
+    "efficiency",
+    "bucket_kind",
+    "bucket_start_utc",
+    "bucket_end_utc",
+    "autonomy_percent",
+    "autonomous_hours",
+    "valid_hours",
+    "non_autonomous_hours",
+    "imported_kwh",
+    "threshold_watts",
+]
 
 
 class AutonomyReportingError(ValueError):
@@ -60,6 +77,24 @@ def format_autonomy_rollup_summary(report: AutonomyRollupReport) -> str:
     ]
     lines.extend(_format_autonomy_rollup_row(row) for row in report.rows)
     return "\n".join(lines)
+
+
+def write_autonomy_rollup_csv(
+    report: AutonomyRollupReport,
+    output_path: str | Path,
+    *,
+    overwrite: bool,
+    numbersapp: bool = False,
+) -> None:
+    resolved_path = Path(output_path)
+    if resolved_path.exists() and not overwrite:
+        raise AutonomyReportingError(f"output file already exists: {resolved_path}")
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    with resolved_path.open("w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=AUTONOMY_ROLLUP_CSV_FIELDNAMES)
+        writer.writeheader()
+        for row in report.rows:
+            writer.writerow(_autonomy_rollup_csv_row(report, row, numbersapp=numbersapp))
 
 
 @dataclass
@@ -428,6 +463,45 @@ def _format_autonomy_rollup_row(row: AutonomyRollupRow) -> str:
         f"{row.valid_hours:>8.2f} "
         f"{row.imported_kwh:>11.2f}"
     )
+
+
+def _autonomy_rollup_csv_row(
+    report: AutonomyRollupReport,
+    row: AutonomyRollupRow,
+    *,
+    numbersapp: bool,
+) -> dict[str, str]:
+    return {
+        "run_id": str(report.run_id),
+        "scenario_name": row.scenario_name,
+        "capacity_kwh": _format_decimal(row.capacity_kwh),
+        "efficiency": _format_decimal(row.efficiency),
+        "bucket_kind": row.bucket_kind,
+        "bucket_start_utc": _format_csv_timestamp(
+            row.bucket_start_utc,
+            numbersapp=numbersapp,
+        ),
+        "bucket_end_utc": _format_csv_timestamp(
+            row.bucket_end_utc,
+            numbersapp=numbersapp,
+        ),
+        "autonomy_percent": _format_decimal(row.autonomy_percent),
+        "autonomous_hours": _format_decimal(row.autonomous_hours),
+        "valid_hours": _format_decimal(row.valid_hours),
+        "non_autonomous_hours": _format_decimal(row.non_autonomous_hours),
+        "imported_kwh": _format_decimal(row.imported_kwh),
+        "threshold_watts": _format_decimal(report.threshold_watts),
+    }
+
+
+def _format_decimal(value: float) -> str:
+    return f"{value:.12g}"
+
+
+def _format_csv_timestamp(value: str, *, numbersapp: bool) -> str:
+    if not numbersapp:
+        return value
+    return _parse_utc_timestamp(value).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _parse_utc_timestamp(value: str) -> datetime:

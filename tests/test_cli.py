@@ -595,6 +595,131 @@ def test_autonomy_command_prints_monthly_summary(tmp_path, capsys) -> None:
     assert "Traceback" not in captured.err
 
 
+def test_autonomy_command_writes_csv_output(tmp_path) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    output_path = tmp_path / "autonomy.csv"
+    _persist_short_autonomy_run(simulation_db)
+
+    exit_code = main(
+        [
+            "autonomy",
+            "--simulation-db",
+            str(simulation_db),
+            "--run-id",
+            "1",
+            "--batteries",
+            "1",
+            "--bucket",
+            "day",
+            "--timezone",
+            "UTC",
+            "--start",
+            "2025-07-01T00:00:00",
+            "--end",
+            "2025-07-01T02:00:00",
+            "--output",
+            str(output_path),
+            "--overwrite",
+        ]
+    )
+
+    assert exit_code == 0
+    with output_path.open(newline="") as csv_file:
+        rows = list(csv.DictReader(csv_file))
+
+    assert list(rows[0]) == [
+        "run_id",
+        "scenario_name",
+        "capacity_kwh",
+        "efficiency",
+        "bucket_kind",
+        "bucket_start_utc",
+        "bucket_end_utc",
+        "autonomy_percent",
+        "autonomous_hours",
+        "valid_hours",
+        "non_autonomous_hours",
+        "imported_kwh",
+        "threshold_watts",
+    ]
+    assert [row["scenario_name"] for row in rows] == ["baseline", "1kWh"]
+    assert rows[0]["bucket_kind"] == "day"
+    assert rows[0]["autonomy_percent"] == "50"
+    assert rows[0]["threshold_watts"] == "30"
+
+
+def test_autonomy_command_writes_numbersapp_timestamp_csv_output(tmp_path) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    output_path = tmp_path / "autonomy.csv"
+    _persist_short_autonomy_run(simulation_db)
+
+    exit_code = main(
+        [
+            "autonomy",
+            "--simulation-db",
+            str(simulation_db),
+            "--run-id",
+            "1",
+            "--batteries",
+            "1",
+            "--bucket",
+            "day",
+            "--timezone",
+            "UTC",
+            "--start",
+            "2025-07-01T00:00:00",
+            "--end",
+            "2025-07-01T02:00:00",
+            "--output",
+            str(output_path),
+            "--overwrite",
+            "--numbersapp",
+        ]
+    )
+
+    assert exit_code == 0
+    with output_path.open(newline="") as csv_file:
+        row = next(csv.DictReader(csv_file))
+
+    assert row["bucket_start_utc"] == "2025-07-01 00:00:00"
+    assert row["bucket_end_utc"] == "2025-07-02 00:00:00"
+
+
+def test_autonomy_command_refuses_to_overwrite_csv_without_option(tmp_path, capsys) -> None:
+    simulation_db = tmp_path / "simulation.sqlite3"
+    output_path = tmp_path / "autonomy.csv"
+    output_path.write_text("keep me\n")
+    _persist_short_autonomy_run(simulation_db)
+
+    exit_code = main(
+        [
+            "autonomy",
+            "--simulation-db",
+            str(simulation_db),
+            "--run-id",
+            "1",
+            "--batteries",
+            "1",
+            "--bucket",
+            "day",
+            "--timezone",
+            "UTC",
+            "--start",
+            "2025-07-01T00:00:00",
+            "--end",
+            "2025-07-01T02:00:00",
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert output_path.read_text() == "keep me\n"
+    assert "already exists" in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_soc_command_accepts_valid_inputs_and_prints_summary(tmp_path, capsys) -> None:
     simulation_db = tmp_path / "simulation.sqlite3"
     _persist_reportable_run(simulation_db, battery_capacities_kwh=[1.0], persist_steps=True)

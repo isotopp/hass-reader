@@ -9,7 +9,11 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from hass_reader.autonomy_reporting import format_autonomy_rollup_summary, load_autonomy_rollups
+from hass_reader.autonomy_reporting import (
+    format_autonomy_rollup_summary,
+    load_autonomy_rollups,
+    write_autonomy_rollup_csv,
+)
 from hass_reader.battery_simulation import AlignedPowerRow, simulate_scenarios
 from hass_reader.cache import SEED_METRIC_SOURCES, resolve_cache_path
 from hass_reader.influx import (
@@ -152,6 +156,13 @@ def main(
                 timezone_name=args.timezone,
                 threshold_watts=args.threshold_watts,
             )
+            if args.output is not None:
+                write_autonomy_rollup_csv(
+                    report,
+                    args.output,
+                    overwrite=args.overwrite,
+                    numbersapp=args.numbersapp,
+                )
         except Exception as error:
             print(f"error: {error}", file=sys.stderr)
             return 1
@@ -406,6 +417,9 @@ def _build_parser() -> argparse.ArgumentParser:
     autonomy.add_argument("--timezone", default=DEFAULT_LOCAL_TIMEZONE)
     autonomy.add_argument("--bucket", default="day")
     autonomy.add_argument("--threshold-watts", type=float, default=30.0)
+    autonomy.add_argument("--output", type=Path, default=None)
+    autonomy.add_argument("--overwrite", action="store_true")
+    autonomy.add_argument("--numbersapp", action="store_true")
     soc = subparsers.add_parser("soc")
     soc.add_argument("--simulation-db", type=Path, default=DEFAULT_SIMULATION_DB_PATH)
     soc.add_argument("--run-id", type=int, default=None)

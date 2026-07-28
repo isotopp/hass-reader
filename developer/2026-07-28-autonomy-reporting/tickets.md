@@ -272,7 +272,7 @@ Execution result:
 
 ## AUT-007: Export Autonomy Buckets as CSV
 
-Status: Proposed
+Status: Done
 
 Source story: Story 5, Export Autonomy Buckets
 
@@ -301,6 +301,18 @@ Acceptance criteria:
 - CSV headers are stable snake_case names.
 - CSV contains one row per selected scenario and bucket.
 - File-write failures exit non-zero and print errors to stderr.
+
+Execution result:
+
+- Added CSV export for autonomy rollup rows.
+- Added `--output`, `--overwrite`, and `--numbersapp` to `hass-reader autonomy`.
+- CSV output includes baseline and selected battery scenario rows with stable snake_case headers.
+- Existing output files are protected unless `--overwrite` is provided.
+- Covered by `tests/test_cli.py`.
+- Verified with `uv run pytest tests/test_cli.py -k autonomy`,
+  `uv run pytest tests/test_autonomy_reporting.py tests/test_cli.py -k autonomy`,
+  `uv run ruff check src/hass_reader/autonomy_reporting.py src/hass_reader/cli.py tests/test_cli.py`,
+  and `uv run pytest`.
 
 ## Suggested Execution Order
 
