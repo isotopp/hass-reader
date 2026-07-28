@@ -411,6 +411,122 @@ def test_soc_command_rejects_invalid_date_range_before_opening_database(tmp_path
     assert "Traceback" not in captured.err
 
 
+def test_autonomy_command_rejects_invalid_bucket_before_opening_database(tmp_path, capsys) -> None:
+    exit_code = main(
+        [
+            "autonomy",
+            "--simulation-db",
+            str(tmp_path / "missing.sqlite3"),
+            "--bucket",
+            "week",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "invalid --bucket" in captured.err
+    assert "simulation database not found" not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_autonomy_command_rejects_invalid_battery_selection_before_opening_database(
+    tmp_path,
+    capsys,
+) -> None:
+    exit_code = main(
+        [
+            "autonomy",
+            "--simulation-db",
+            str(tmp_path / "missing.sqlite3"),
+            "--batteries",
+            "5,,10",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "invalid --batteries" in captured.err
+    assert "simulation database not found" not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_autonomy_command_rejects_invalid_date_range_before_opening_database(
+    tmp_path,
+    capsys,
+) -> None:
+    exit_code = main(
+        [
+            "autonomy",
+            "--simulation-db",
+            str(tmp_path / "missing.sqlite3"),
+            "--start",
+            "2026-02-01",
+            "--end",
+            "2026-01-01",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "invalid time range" in captured.err
+    assert "simulation database not found" not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_autonomy_command_rejects_invalid_threshold_before_opening_database(
+    tmp_path,
+    capsys,
+) -> None:
+    exit_code = main(
+        [
+            "autonomy",
+            "--simulation-db",
+            str(tmp_path / "missing.sqlite3"),
+            "--threshold-watts",
+            "-1",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "invalid --threshold-watts" in captured.err
+    assert "simulation database not found" not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_autonomy_command_accepts_valid_inputs_before_read_model_exists(
+    tmp_path,
+    capsys,
+) -> None:
+    exit_code = main(
+        [
+            "autonomy",
+            "--simulation-db",
+            str(tmp_path / "missing.sqlite3"),
+            "--run-id",
+            "1",
+            "--batteries",
+            "1",
+            "--start",
+            "2025-07-01",
+            "--end",
+            "2025-07-02",
+            "--timezone",
+            "Europe/Amsterdam",
+            "--bucket",
+            "month",
+            "--threshold-watts",
+            "30",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "autonomy reporting is not implemented yet" in captured.err
+    assert "simulation database not found" not in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_soc_command_accepts_valid_inputs_and_prints_summary(tmp_path, capsys) -> None:
     simulation_db = tmp_path / "simulation.sqlite3"
     _persist_reportable_run(simulation_db, battery_capacities_kwh=[1.0], persist_steps=True)

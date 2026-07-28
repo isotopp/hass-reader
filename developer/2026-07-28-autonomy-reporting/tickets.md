@@ -57,7 +57,7 @@ proportionally across affected buckets.
 
 ## AUT-001: Validate Autonomy Command Inputs
 
-Status: Proposed
+Status: Done
 
 Source stories: Story 1, Report Daily Autonomy; Story 2, Report Monthly Autonomy; Story 6, Share
 Reporting Conventions with SoC Reports
@@ -84,6 +84,16 @@ Acceptance criteria:
 - Invalid date ranges exit non-zero before database access.
 - Valid inputs reach an explicit "not implemented yet" or empty read-model placeholder during this
   ticket only.
+
+Execution result:
+
+- Added the `autonomy` command with `--simulation-db`, `--run-id`, `--batteries`, `--start`,
+  `--end`, `--timezone`, `--bucket`, and `--threshold-watts`.
+- Added validation for bucket kind, run ID, battery selectors, threshold, and date ranges before
+  database access.
+- Valid inputs reach an explicit placeholder until the read model is implemented.
+- Covered by `tests/test_cli.py`.
+- Verified with `uv run pytest tests/test_cli.py -k autonomy` and `uv run pytest`.
 
 ## AUT-002: Detect Step Availability Without Refetching Source Data
 

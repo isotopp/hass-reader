@@ -135,6 +135,13 @@ def main(
             return 1
         print(format_human_summary(report))
         return 0
+    if args.command == "autonomy":
+        validation_error = _validate_autonomy_args(args)
+        if validation_error is not None:
+            print(f"error: {validation_error}", file=sys.stderr)
+            return 2
+        print("error: autonomy reporting is not implemented yet", file=sys.stderr)
+        return 1
     if args.command == "soc":
         validation_error = _validate_soc_args(args)
         if validation_error is not None:
@@ -375,6 +382,15 @@ def _build_parser() -> argparse.ArgumentParser:
     report.add_argument("--output", type=Path, default=None)
     report.add_argument("--overwrite", action="store_true")
     report.add_argument("--numbersapp", action="store_true")
+    autonomy = subparsers.add_parser("autonomy")
+    autonomy.add_argument("--simulation-db", type=Path, default=DEFAULT_SIMULATION_DB_PATH)
+    autonomy.add_argument("--run-id", type=int, default=None)
+    autonomy.add_argument("--batteries", default="")
+    autonomy.add_argument("--start", default=_format_local_date(default_range.start_utc))
+    autonomy.add_argument("--end", default=_format_local_date(default_range.end_utc))
+    autonomy.add_argument("--timezone", default=DEFAULT_LOCAL_TIMEZONE)
+    autonomy.add_argument("--bucket", default="day")
+    autonomy.add_argument("--threshold-watts", type=float, default=30.0)
     soc = subparsers.add_parser("soc")
     soc.add_argument("--simulation-db", type=Path, default=DEFAULT_SIMULATION_DB_PATH)
     soc.add_argument("--run-id", type=int, default=None)
@@ -433,6 +449,29 @@ def _validate_simulation_args(args: argparse.Namespace) -> str | None:
 def _validate_report_args(args: argparse.Namespace) -> str | None:
     if args.run_id is not None and args.run_id <= 0:
         return "invalid --run-id: expected a positive integer"
+    return None
+
+
+def _validate_autonomy_args(args: argparse.Namespace) -> str | None:
+    if args.run_id is not None and args.run_id <= 0:
+        return "invalid --run-id: expected a positive integer"
+    if args.bucket not in {"day", "month"}:
+        return "invalid --bucket: expected one of day, month"
+    if args.threshold_watts < 0:
+        return "invalid --threshold-watts: expected a non-negative number"
+    selectors = _parse_soc_battery_selectors(args.batteries)
+    if args.batteries and not selectors:
+        return "invalid --batteries: provide comma-separated scenario names or positive capacities"
+    try:
+        start_utc = _parse_local_boundary(args.start, args.timezone)
+        end_utc = _parse_local_boundary(args.end, args.timezone)
+    except ValueError as error:
+        return f"invalid time range: {error}"
+    if start_utc >= end_utc:
+        return "invalid time range: expected --start to be before --end"
+    args.battery_selectors = selectors
+    args.start_utc = start_utc
+    args.end_utc = end_utc
     return None
 
 
