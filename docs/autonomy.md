@@ -219,3 +219,32 @@ eliminating import intervals.
 
 If autonomy rises while imported kWh remains non-zero, the remaining grid imports are concentrated
 in fewer intervals.
+
+## Example Chart
+
+![Monthly autonomy comparison](assets/autonomy.png)
+
+This chart compares monthly autonomy for three scenarios:
+
+- red: no battery,
+- yellow: 5 kWh battery,
+- green: 30 kWh battery.
+
+The 5 kWh battery helps a lot in months with useful solar surplus. This is visible where the yellow
+bars are much taller than the red bars, especially from spring through late summer.
+
+The 30 kWh battery does not always add much more autonomy than the 5 kWh battery. In months where
+the green bars are not much taller than the yellow bars, extra capacity is not the limiting factor.
+There is not enough surplus generation, or the existing smaller battery already covers most
+zero-import intervals.
+
+In winter, the yellow and green bars stay close to the red bars. That means there is not enough sun
+to charge either battery enough to create much additional autonomy.
+
+This autonomy view does not show every reason a larger battery can still be useful. With per-hour
+electricity prices, more capacity can help bridge high-price periods by charging earlier and
+discharging when grid power is expensive. That price-arbitrage benefit is not visible in this chart.
+
+The 30 kWh battery may also run as part of a virtual power plant. In that role, it can help
+stabilize the grid and earn money by being charged from, and discharged to, the grid. That grid
+services value is separate from household autonomy and is not represented by these bars.
