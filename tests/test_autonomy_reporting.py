@@ -124,7 +124,7 @@ def test_load_daily_autonomy_rollups_reports_time_weighted_zero_import(tmp_path)
             pytest.approx(3.0),
             pytest.approx(1.0),
             pytest.approx(1.02),
-        )
+        ),
     ]
 
 
@@ -301,7 +301,7 @@ def test_load_monthly_autonomy_rollups_filters_half_open_interval(tmp_path) -> N
             pytest.approx(0.5),
             pytest.approx(0.5),
             pytest.approx(0.0),
-        )
+        ),
     ]
 
 

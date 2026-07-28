@@ -218,8 +218,7 @@ def load_autonomy_rollups(
         threshold_watts=threshold_watts,
         scenarios=availability.scenarios,
         rows=[
-            _bucket_to_row(bucket_kind=bucket_kind, bucket=buckets[key])
-            for key in sorted(buckets)
+            _bucket_to_row(bucket_kind=bucket_kind, bucket=buckets[key]) for key in sorted(buckets)
         ],
     )
 
@@ -341,9 +340,7 @@ def _load_step_intervals(
     for index, row in enumerate(rows):
         start_utc = _parse_utc_timestamp(str(row[0]))
         end_utc = (
-            _parse_utc_timestamp(str(rows[index + 1][0]))
-            if index + 1 < len(rows)
-            else run_end_utc
+            _parse_utc_timestamp(str(rows[index + 1][0])) if index + 1 < len(rows) else run_end_utc
         )
         if end_utc > start_utc:
             intervals.append(
@@ -453,7 +450,9 @@ def _bucket_to_row(*, bucket_kind: str, bucket: _AutonomyBucket) -> AutonomyRoll
 
 
 def _format_autonomy_rollup_row(row: AutonomyRollupRow) -> str:
-    bucket_label = row.bucket_start_utc[:7] if row.bucket_kind == "month" else row.bucket_start_utc[:10]
+    bucket_label = (
+        row.bucket_start_utc[:7] if row.bucket_kind == "month" else row.bucket_start_utc[:10]
+    )
     return (
         f"{bucket_label:<10} "
         f"{row.scenario_name:<8} "
